@@ -1,0 +1,58 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C extensions
+*.c
+*.h
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+*.egg-info/
+.installed.cfg
+*.manifest
+*.spec
+
+# Test and coverage
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Virtual environment
+.venv
+venv/
+env/
+/venv
+/env
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Temporary files
+*.log
+*.tmp
+temp/
+/tmp
+
+# FastAPI and Uvicorn specific
+# Local database files
+*.sqlite3
+db.sqlite3
+
+# Environment variables
+.env
+.env.local
+
+# Docker files
+.docker/
+docker-compose.local.yml
