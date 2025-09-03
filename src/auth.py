@@ -5,7 +5,6 @@ from src.config import settings
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pytz import timezone
-from src.db.redis import is_token_blacklisted
 
 SECRET_KEY = settings.SECRET_KEY
 REFRESH_KEY = settings.REFRESH_KEY

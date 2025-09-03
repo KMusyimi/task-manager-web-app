@@ -1,15 +1,15 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from asyncmy.pool import create_pool  # type: ignore
-from src.config import settings
 
+from asyncmy.pool import create_pool  # type: ignore
+from fastapi import FastAPI
+from src.config import settings
 
 mySqlConf = {
     "host": settings.DB_HOST,
-    'db': settings.DB,
-    "user": settings.USER,
-    "password": settings.PASSWORD,
-    'port': settings.PORT
+    'db': settings.DB_NAME,
+    "user": settings.DB_USER,
+    "password": settings.MYSQL_PASSWORD,
+    'port': settings.DB_PORT
 }
 
 db_pool = None
