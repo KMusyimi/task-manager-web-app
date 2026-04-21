@@ -1,4 +1,5 @@
 import logging
+import bcrypt  # type: ignore
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,11 @@ from src.db.redis_backend import (delete_profile_url, get_cache_user_id, get_pro
 from src.models.entities import UserCreate, UserInDb
 
 logger = logging.getLogger("users_logger")
+
+# This 'tricks' passlib into thinking bcrypt is an older, compatible version
+if not hasattr(bcrypt, "__about__"):
+    bcrypt.__about__ = type('about', (object,), {
+                            '__version__': bcrypt.__version__})
 
 
 class Users():
@@ -93,42 +99,13 @@ class Users():
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database response format is incorrect. 'userID' key is missing.")
 
-    async def register_user(self, conn: Connection, cursor: DictCursor, user: UserCreate) -> int:
-        try:
-            hashed_password = users.get_password_hash(user.password)
-            params = (user.username, user.email, hashed_password)
-
-            await cursor.callproc('create_user', params)
-            await conn.commit()
-
-            user_record = await cursor.fetchone()
-
-            if user_record is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database response format is incorrect. 'userID' key is missing.")
-
-            user_id = user_record['userID']
-
-            await set_cache_user_id(username=user.username, user_id=user_id)
-            return user_id
-
-        except ProgrammingError as e:
-            await conn.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error during user registration: {e}"
-            )
-        except Exception:
-            await conn.rollback()
-            raise
-
     async def get_user_profile_url(self, cursor: DictCursor, username: str) -> Optional[str]:
         logger.info(f'Getting user {username} profile url')
         cached_profile_url = await get_profile_url(username=username)
 
         if cached_profile_url is None:
             logger.info(f'Getting user {username} profile url from database')
-            
+
             SELECT_STMT = """SELECT profile_img_url FROM todo_schema.user 
             WHERE username = %(username)s"""
 
@@ -141,9 +118,9 @@ class Users():
 
             db_profile_url = result['profile_img_url']
             return db_profile_url
-        
+
         return cached_profile_url
-    
+
     async def delete_old_profile_url(self, cursor: DictCursor, username: str):
         old_url = await self.get_user_profile_url(cursor=cursor, username=username)
 
@@ -154,7 +131,7 @@ class Users():
         logger.info(old_url)
         current_dir = Path(__file__).resolve().parent
         base_dir = (current_dir.parent / "static").resolve()
-        
+
         target_file = (base_dir / old_url.lstrip("/")).resolve()
         logger.info(f'delete profile target file {target_file}')
 
@@ -163,7 +140,6 @@ class Users():
                 f"Security Warning: Attempted to delete file outside static dir: {target_file}")
             return
 
-        
         if target_file.exists() and target_file.is_file():
             try:
                 # For high-performance, wrap in a threadpool or use anyio

@@ -1,3 +1,4 @@
+import logging
 import tracemalloc
 
 from fastapi import Depends, FastAPI, HTTPException, Response
@@ -14,7 +15,8 @@ from src.routes.auth_router import auth_router
 from src.routes.projects_router import projects_router 
 from src.routes.tasks_router import task_router 
 
-# TODO: add loggers
+
+logger = logging.getLogger('uvicorn.access')
 
 tracemalloc.start()
 origins = [

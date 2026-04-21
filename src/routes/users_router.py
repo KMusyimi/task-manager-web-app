@@ -34,7 +34,7 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                     detail="User does not exist")
 
             select_stmt = """SELECT email, profile_img_url from todo_schema.user WHERE userID = %(user_id)s"""
-
+            
             await cursor.execute(select_stmt, {'user_id': user_id})
             user_record = await cursor.fetchone()
 
@@ -180,8 +180,8 @@ async def edit_profile(user: UserUpdate,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while editing profile.")
 
 
-@user_router.put('/{user_id}/change-password')
-async def change_user_password(user_id: int, user: UserChangePassword,
+@user_router.put('/change-password')
+async def change_user_password(user: UserChangePassword,
                                conn: Connection = Depends(get_session),
                                current_user: TokenData = Depends(
                                    get_current_user),
@@ -189,6 +189,14 @@ async def change_user_password(user_id: int, user: UserChangePassword,
     try:
         logger.info(f'{user}')
         async with conn.cursor(DictCursor) as cursor:
+            params = (current_user.sub, '')
+            user_id = await users.get_user_id(cursor, params)
+
+            if user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User does not exist")
+
             await validate_change_password(cursor=cursor, username=current_user.sub, user=user)
 
             hashed_pw = users.get_password_hash(user.new_pw)
@@ -221,5 +229,4 @@ async def change_user_password(user_id: int, user: UserChangePassword,
     except Exception as e:
         logger.error(f"change password error: {e}")
         raise e
-        logger.error(f"change password error: {e}")
-        raise e
+    
