@@ -1,9 +1,12 @@
+import tracemalloc
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from mysql.connector import Error
+from src.app_lifespans import master_lifespan
+from src.routes.users_router import user_router
 from src.db.database import get_session
-from src.db import master_lifespan
 from pytz import timezone
 from asyncmy.cursors import DictCursor  # type: ignore
 from asyncmy.connection import Connection  # type: ignore
@@ -11,14 +14,15 @@ from src.routes.auth_router import auth_router
 from src.routes.projects_router import projects_router 
 from src.routes.tasks_router import task_router 
 
+# TODO: add loggers
 
+tracemalloc.start()
 origins = [
     "http://localhost:5173",
     "http://localhost:8080",
 ]
 
 app = FastAPI(docs_url="/api/py/docs", lifespan=master_lifespan)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -28,11 +32,25 @@ app.add_middleware(
 )
 
 
+class CacheStaticFiles(StaticFiles):
+    def __init__(self, *args, **kwargs):
+        self.cache_max_age = kwargs.pop("cache_max_age", 31536000)
+        super().__init__(*args, **kwargs)
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = f"public, max-age={self.cache_max_age}, immutable"
+        return response
+
+
+app.mount('/static', CacheStaticFiles(directory='static'), name='static')
+
 tz = timezone('Africa/Nairobi')
 
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(task_router)
+app.include_router(user_router)
 
 
 @app.get("/api/recommendations")
@@ -48,51 +66,3 @@ async def getRecommendations(conn: Connection = Depends(get_session)):
         raise HTTPException(
             status_code=500, detail=f"Something went wrong: {e}")
 
-
-
-# @app.get('/api/{userID}/tasks')
-# async def getAllUserTasks(userID: int, page_num: int, page_size: int = 30, filter_date=date.today()):
-#     try:
-#         with closing(pool.get_connection()) as conn:
-#             with closing(conn.cursor(dictionary=True)) as cursor:
-#                 params = (userID, filter_date, page_num, page_size)
-#                 cursor.callproc('get_all_user_tasks', params)
-#                 results = next(cursor.stored_results())
-#                 return results.fetchall()
-
-#     except Error as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Something went wrong: {e}")
-
-
-# @app.get('/api/{userID}/project/{projectID}/tasks')
-# async def getTasksByProjectID(userID: int, projectID: int, page_num: int, page_size: int = 10, filter_date=date.today()):
-#     with closing(pool.get_connection()) as conn:
-
-#         with closing(conn.cursor(dictionary=True)) as cursor:
-#             params = (userID, projectID, filter_date, page_num, page_size)
-#             cursor.callproc('getTasksByProjectID', params)
-#             results = next(cursor.stored_results())
-#             return results.fetchall()
-
-
-# @app.put('/api/{userID}/project/{projectID}/task/{taskID}')
-# async def completeTask(userID: int, projectID: int, taskID: int):
-#     try:
-#         with closing(pool.get_connection()) as conn:
-
-#             with conn.cursor(dictionary=True) as cursor:
-#                 params = (userID, projectID, taskID)
-#                 cursor.callproc('completeTaskByID', params)
-#                 try:
-#                     conn.commit()
-#                     result = next(cursor.stored_results())
-#                     return result.fetchone()
-#                 except StopIteration:
-#                     conn.rollback()
-#                     raise HTTPException(
-#                         status_code=status.HTTP_404_NOT_FOUND, detail=f"Task {taskID} doesn't exist in project {projectID}.")
-
-#     except Error as e:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Something went wrong: {e}")
