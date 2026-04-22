@@ -56,3 +56,12 @@ db.sqlite3
 # Docker files
 .docker/
 docker-compose.local.yml
+
+# Ignore user-uploaded profile pictures
+# Adjust the path based on your 'UPLOAD_FOLDER' variable in Python
+**/static/uploads/profiles/*
+**/media/profiles/*
+
+# Keep the directory structure but ignore the files
+!**/static/uploads/profiles/.gitkeep
+!**/media/profiles/.gitkeep
