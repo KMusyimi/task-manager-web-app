@@ -15,6 +15,7 @@ class BaseModelConfig(BaseModel):
         populate_by_name=True,
     )
 
+
 class RequestLog(BaseModelConfig):
     req_id: str
     method: str
@@ -90,6 +91,7 @@ class UploadResponse(BaseModelConfig):
 
 
 class UserChangePassword(BaseModelConfig):
+    username: str
     current_pw: str
     new_pw: str
     confirm_pw: str
@@ -146,6 +148,7 @@ class Project(BaseModelConfig):
     project_name: str
     color: str
 
+
 class ProjectAdd(Project):
     projectID: Optional[int] = None
     project_name: str
@@ -169,8 +172,10 @@ class TaskAdd(CamelModel):
     start_date: datetime
     end_date: datetime
 
+
 class ProjectTaskGet(Project):
     tasks: List[TaskResponse] = Field(default_factory=list)
-    
+
+
 class ProjectsResponse(BaseModelConfig):
     projects: List[ProjectTaskGet] = Field(default_factory=list)

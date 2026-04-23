@@ -180,14 +180,14 @@ async def edit_profile(user: UserUpdate,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while editing profile.")
 
 
-@user_router.put('/change-password')
+@user_router.post('/change-password')
 async def change_user_password(user: UserChangePassword,
                                conn: Connection = Depends(get_session),
                                current_user: TokenData = Depends(
                                    get_current_user),
                                token_jti: UserTokenJTI = Depends(get_current_user_jti)):
     try:
-        logger.info(f'{user}')
+        logger.info(f'Change password{user}')
         async with conn.cursor(DictCursor) as cursor:
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
