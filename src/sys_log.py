@@ -71,7 +71,8 @@ def log_error(uuid: str, response_body: dict):
 class SensitiveDataFilter(logging.Filter):
     SENSITIVE_KEYS = (
         "credentials", "authorization", "token",
-        "password", "access_token", "refresh_token"
+        "password", "access_token", "refresh_token",
+        'current_pw', 'new_pw', 'confirm_pw'
     )
 
     # Dynamically build regex: (?<=(token|password|...)=)([^;\s&]+)
@@ -81,7 +82,8 @@ class SensitiveDataFilter(logging.Filter):
         try:
             # Handle extra arguments (e.g., logger.info("msg", {"password": "123"}))
             if record.args:
-                record.args = self.mask_sensitive_args(record.args)  # type: ignore
+                record.args = self.mask_sensitive_args(
+                    record.args)  # type: ignore
 
             # Handle the main message string
             if isinstance(record.msg, str):
@@ -110,6 +112,7 @@ class SensitiveDataFilter(logging.Filter):
             return re.sub(self.SENSITIVE_PATTERN, "******", message, flags=re.IGNORECASE)
 
         return message
+
 
 LOGGING_CONFIG = {
     "version": 1,

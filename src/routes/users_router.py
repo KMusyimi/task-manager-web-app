@@ -1,10 +1,12 @@
 import logging
 
+from fastapi.responses import JSONResponse
+
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from mysql.connector import Error, ProgrammingError
-from src.auth import auth_token_response
+from src.auth import REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN, auth_token_response
 from src.compress_profile_img import process_profile_img
 from src.db.database import get_session
 from src.db.redis_backend import (add_jti_block_list, delete_profile_url,
@@ -34,7 +36,7 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                     detail="User does not exist")
 
             select_stmt = """SELECT email, profile_img_url from todo_schema.user WHERE userID = %(user_id)s"""
-            
+
             await cursor.execute(select_stmt, {'user_id': user_id})
             user_record = await cursor.fetchone()
 
@@ -201,7 +203,7 @@ async def change_user_password(user: UserChangePassword,
 
             hashed_pw = users.get_password_hash(user.new_pw)
 
-            await conn.callproc('change_user_password', (user_id, hashed_pw))
+            await cursor.callproc('change_user_password', (user_id, hashed_pw))
             row = await cursor.fetchone()
             await conn.commit()
 
@@ -212,11 +214,22 @@ async def change_user_password(user: UserChangePassword,
             await set_user_token_v(current_user.sub, version=new_version)
 
             token_data = {'sub': current_user.sub, 'v': new_version}
-            response = auth_token_response(
-                token_data=token_data, msg='Password change successfully. You have been logged out from all devices.')
+            
+            response = JSONResponse(
+                content={
+                    "message": 'Password change successfully. You have been logged out from all devices.'},
+                status_code=status.HTTP_200_OK)
+            # deleting the users httponly cookie
+            response.set_cookie(key=REFRESH_TOKEN_COOKIE_NAME,
+                                value='',
+                                httponly=True,
+                                secure=True,
+                                samesite="lax",
+                                domain=REFRESH_TOKEN_DOMAIN,
+                                max_age=-1)
 
             logger.info(
-                f"User {token_data['sub']} token version {token_data['v']} change password successful")
+                f"User {token_data['sub']} token version {token_data['v']} change password and logout successful")
 
             return response
 
@@ -227,6 +240,6 @@ async def change_user_password(user: UserChangePassword,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while editing profile.")
 
     except Exception as e:
+        await conn.rollback()
         logger.error(f"change password error: {e}")
         raise e
-    
