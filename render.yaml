@@ -33,7 +33,7 @@ services:
       - key: DB_PASSWORD
         sync: false
       - key: DB_NAME
-        value: defaultdb
+        value: todo_schema
 
       # REDIS (UPSTASH)
       - key: REDIS_URL

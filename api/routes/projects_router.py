@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from mysql.connector import Error
 from pydantic import ValidationError
-from src.db.database import get_session
-from src.models.entities import (Project, ProjectAdd, ProjectResponse,
+from api.db.database import DB_NAME, get_session
+from api.models.entities import (Project, ProjectAdd, ProjectResponse,
                                  ProjectsResponse, ProjectTaskGet,
                                  ProjectUpdate, TaskResponse, TokenData)
-from src.users import users
-from src.utils import get_current_user
+from api.users import users
+from api.utils import get_current_user
 
 projects_router = APIRouter(prefix='/projects/{username}', tags=['projects'])
 
@@ -102,8 +102,8 @@ async def get_user_projects(conn: Connection = Depends(get_session),
                             current_user: TokenData = Depends(
                                 get_current_user),
                             filter_date=date.today()):
-
-    SELECT_STMT = "SELECT name FROM todo_schema.status;"
+    # TODO: UPDATE STATUS
+    SELECT_STMT = f"SELECT name FROM {DB_NAME}.status;"
     projects_map = {}
     try:
 
@@ -193,7 +193,7 @@ async def update_project(
                 [f"{key}=%({key})s" for key in update_data])
 
             # Dynamic query base on the updated fields only
-            update_stmt = f'UPDATE todo_schema.projects SET {set_clause} WHERE projectID = %(project_id)s AND userID = %(user_id)s'
+            update_stmt = f'UPDATE {DB_NAME}.projects SET {set_clause} WHERE projectID = %(project_id)s AND userID = %(user_id)s'
 
             params = {**update_data,
                       'project_id': project_id, "user_id": user_id}

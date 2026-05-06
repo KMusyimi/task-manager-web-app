@@ -6,16 +6,16 @@ from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from mysql.connector import Error, ProgrammingError
-from src.auth import REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN, auth_token_response
-from src.compress_profile_img import process_profile_img
-from src.db.database import get_session
-from src.db.redis_backend import (add_jti_block_list, delete_profile_url,
+from api.auth import REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN, auth_token_response
+from api.compress_profile_img import process_profile_img
+from api.db.database import DB_NAME, get_session
+from api.db.redis_backend import (add_jti_block_list, delete_profile_url,
                                   set_profile_url,
                                   set_user_token_v, update_username)
-from src.models.entities import (TokenData, UploadResponse, UserChangePassword,
+from api.models.entities import (TokenData, UploadResponse, UserChangePassword,
                                  UserGet, UserTokenJTI, UserUpdate)
-from src.users import users
-from src.utils import (get_current_user, get_current_user_jti,
+from api.users import users
+from api.utils import (get_current_user, get_current_user_jti,
                        validate_auth_creds, validate_change_password)
 
 user_router = APIRouter(prefix='/users/{username}', tags=['users'])
@@ -35,7 +35,7 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User does not exist")
 
-            select_stmt = """SELECT email, profile_img_url from todo_schema.user WHERE userID = %(user_id)s"""
+            select_stmt = f"""SELECT email, profile_img_url from {DB_NAME}.user WHERE userID = %(user_id)s"""
 
             await cursor.execute(select_stmt, {'user_id': user_id})
             user_record = await cursor.fetchone()
@@ -144,8 +144,8 @@ async def edit_profile(user: UserUpdate,
             create_proc = f"""
                 CREATE PROCEDURE edit_user_profile(IN user_id INT, {params_list})
                 BEGIN
-                    UPDATE todo_schema.user SET {set_clause} WHERE userID = user_id;
-                    SELECT username FROM todo_schema.user WHERE userID = user_id;
+                    UPDATE {DB_NAME}.user SET {set_clause} WHERE userID = user_id;
+                    SELECT username FROM {DB_NAME}.user WHERE userID = user_id;
                 END;
             """
 

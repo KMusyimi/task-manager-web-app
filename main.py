@@ -5,15 +5,15 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from mysql.connector import Error
-from src.app_lifespans import master_lifespan
-from src.routes.users_router import user_router
-from src.db.database import get_session
+from api.app_lifespans import master_lifespan
+from api.routes.users_router import user_router
+from api.db.database import get_session
 from pytz import timezone
 from asyncmy.cursors import DictCursor  # type: ignore
 from asyncmy.connection import Connection  # type: ignore
-from src.routes.auth_router import auth_router
-from src.routes.projects_router import projects_router 
-from src.routes.tasks_router import task_router 
+from api.routes.auth_router import auth_router
+from api.routes.projects_router import projects_router 
+from api.routes.tasks_router import task_router 
 
 
 logger = logging.getLogger('uvicorn.access')

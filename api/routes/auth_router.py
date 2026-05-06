@@ -8,14 +8,14 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from mysql.connector import Error
 from pytz import timezone
-from src.auth import (REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN,
+from api.auth import (REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN,
                       REFRESH_TOKEN_MAX_AGE, REFRESH_TOKEN_RENEWAL_THRESHOLD, auth_token_response,
                       create_access_token, create_refresh_token)
-from src.db.database import get_session
-from src.db.redis_backend import add_jti_block_list, set_cache_user_id, set_user_token_v
-from src.models.entities import RefreshTokenData, TokenData, User, UserCreate, UserTokenJTI
-from src.users import users
-from src.utils import (get_current_user, get_current_user_jti,
+from api.db.database import get_session
+from api.db.redis_backend import add_jti_block_list, set_cache_user_id, set_user_token_v
+from api.models.entities import RefreshTokenData, TokenData, User, UserCreate, UserTokenJTI
+from api.users import users
+from api.utils import (get_current_user, get_current_user_jti,
                        get_refresh_token, validate_auth_creds,
                        validate_login_creds)
 
@@ -128,7 +128,7 @@ async def revoke_token(users_jti: UserTokenJTI = Depends(get_current_user_jti)):
         await add_jti_block_list(users_jti)
 
         # TODO: check increment
-        # UPDATE_STATEMENT = """UPDATE todo_schema.user SET hashed_password = %,
+        # UPDATE_STATEMENT = f"""UPDATE {DB_NAME}.user SET hashed_password = %,
         #         token_version = token_version + 1 (hashed_password)s WHERE userID=%(user_id)
         #         RETURNING token_version"""
 

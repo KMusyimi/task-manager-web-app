@@ -6,10 +6,10 @@ from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from mysql.connector import Error
-from src.db.database import get_session
-from src.models.entities import TaskAdd, TasksGet, User
-from src.users import users
-from src.utils import get_current_user
+from api.db.database import DB_NAME, get_session
+from api.models.entities import TaskAdd, TasksGet, User
+from api.users import users
+from api.utils import get_current_user
 
 task_router = APIRouter(prefix='/projects/{username}', tags=['tasks'])
 # TODO: check useful functions
@@ -113,7 +113,7 @@ async def update_task(project_id: int,
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User does not exist")
 
-            update_stmt = f"UPDATE todo_schema.tasks SET {task} WHERE taskID = %(task_id)s AND userID = %(user_id)s AND projectID = %(project_id)s"
+            update_stmt = f"UPDATE {DB_NAME}.tasks SET {task} WHERE taskID = %(task_id)s AND userID = %(user_id)s AND projectID = %(project_id)s"
             print(update_stmt)
             # await cursor.execute(update_stmt, {'task_id': task_id, 'user_id': user_id, 'project_id': project_id})
 

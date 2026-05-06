@@ -5,7 +5,7 @@ import traceback
 import logging.config
 from fastapi import FastAPI, Request
 
-from src.models.entities import ErrorLog, RequestLog
+from api.models.entities import ErrorLog, RequestLog
 
 # define the name of the module as the logger name
 LOGGER = logging.getLogger("users_logger")

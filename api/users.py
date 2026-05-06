@@ -1,18 +1,18 @@
 import logging
+from api.db.database import DB_NAME
 import bcrypt  # type: ignore
 from pathlib import Path
 from typing import Optional
 
 from fastapi.concurrency import run_in_threadpool
 
-from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import HTTPException, status
 from mysql.connector import ProgrammingError
 from passlib.context import CryptContext
-from src.db.redis_backend import (delete_profile_url, get_cache_user_id, get_profile_url,
+from api.db.redis_backend import (delete_profile_url, get_cache_user_id, get_profile_url,
                                   set_cache_user_id)
-from src.models.entities import UserCreate, UserInDb
+from api.models.entities import UserCreate, UserInDb
 
 logger = logging.getLogger("users_logger")
 
@@ -106,7 +106,7 @@ class Users():
         if cached_profile_url is None:
             logger.info(f'Getting user {username} profile url from database')
 
-            SELECT_STMT = """SELECT profile_img_url FROM todo_schema.user 
+            SELECT_STMT = f"""SELECT profile_img_url FROM {DB_NAME}.user 
             WHERE username = %(username)s"""
 
             await cursor.execute(SELECT_STMT, {'username': username})

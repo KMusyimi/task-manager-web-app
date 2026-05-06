@@ -2,14 +2,21 @@ from contextlib import asynccontextmanager
 import logging
 from asyncmy.pool import create_pool  # type: ignore
 from fastapi import FastAPI
-from src.config import settings
+from api.config import settings
+
+
+DB_HOST = settings.DB_HOST
+DB_NAME = settings.DB_NAME
+DB_USER = settings.DB_USER
+DB_PASSWORD = settings.DB_PASSWORD
+DB_PORT = settings.DB_PORT
 
 mySqlConf = {
-    "host": settings.DB_HOST,
-    'db': settings.DB_NAME,
-    "user": settings.DB_USER,
-    "password": settings.DB_PASSWORD,
-    'port': settings.DB_PORT
+    "host": DB_HOST,
+    'db': DB_NAME,
+    "user": DB_USER,
+    "password": DB_PASSWORD,
+    'port': DB_PORT
 }
 logger = logging.getLogger("users_logger")
 db_pool = None
@@ -31,7 +38,8 @@ async def database_lifespan(_: FastAPI):
 
 async def get_session():
     if db_pool is None:
-        logger.error("Database pool not initialized. The 'lifespan' event must run first.")
+        logger.error(
+            "Database pool not initialized. The 'lifespan' event must run first.")
         raise RuntimeError(
             "Database pool not initialized. The 'lifespan' event must run first.")
 

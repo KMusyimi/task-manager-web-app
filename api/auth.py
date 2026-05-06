@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 from jose import JWTError, jwt
 from pytz import timezone
-from src.config import settings
+from api.config import settings
 
 SECRET_KEY = settings.ACCESS_KEY
 REFRESH_KEY = settings.REFRESH_KEY

@@ -11,13 +11,13 @@ from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from pytz import timezone
-from src.auth import verify_token
-from src.db.database import get_session
-from src.db.redis_backend import (get_user_token_v, is_token_blacklisted,
+from api.auth import verify_token
+from api.db.database import DB_NAME, get_session
+from api.db.redis_backend import (get_user_token_v, is_token_blacklisted,
                                   set_user_token_v)
-from src.models.entities import (RefreshTokenData, TokenData, User,
+from api.models.entities import (RefreshTokenData, TokenData, User,
                                  UserChangePassword, UserTokenJTI, UserUpdate)
-from src.users import users
+from api.users import users
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 tz = timezone('Africa/Nairobi')
@@ -103,7 +103,7 @@ async def check_token_version(conn: Connection, token_data: Union[TokenData, Ref
         return
     # database fallback
     async with conn.cursor(DictCursor) as cursor:
-        await cursor.execute("SELECT token_v FROM todo_schema.user WHERE username = %s", (token_data.sub,))
+        await cursor.execute(f"SELECT token_v FROM {DB_NAME}.user WHERE username = %s", (token_data.sub,))
         user_record = await cursor.fetchone()
 
         if not user_record or user_record['token_v'] != token_version:

@@ -5,12 +5,14 @@ from typing import AsyncGenerator, Optional
 import redis.asyncio as redis  # pyright: ignore[reportMissingImports]
 from fastapi import FastAPI
 from redis import exceptions  # pyright: ignore[reportMissingImports]
-from src.config import settings
-from src.models.entities import UserTokenJTI
+from api.config import settings
+from api.models.entities import UserTokenJTI
 
 JTI_EXPIRY = 3600
+REDIS_URL = settings.REDIS_URL
 
 redis_client = None
+
 logger = logging.getLogger("users_logger")
 
 
@@ -18,7 +20,7 @@ logger = logging.getLogger("users_logger")
 async def redis_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global redis_client
     redis_client = redis.from_url(
-        settings.REDIS_URL,
+        REDIS_URL,
         encoding='utf-8',
         decode_responses=True
     )
