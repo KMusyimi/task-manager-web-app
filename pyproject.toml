@@ -15,6 +15,7 @@ dependencies = [
     "mysql-connector-python==9.3.0",
     "asyncmy==0.2.10",
     "redis==6.2.0",
+    "Pillow>=10.0.0",
     "aioredis==2.0.1",
     "python-jose[cryptography]==3.5.0",
     "passlib[bcrypt]==1.7.4",
