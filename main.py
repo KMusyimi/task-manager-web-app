@@ -44,7 +44,7 @@ class CacheStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = f"public, max-age={self.cache_max_age}, immutable"
         return response
 
-
+# serves my static files
 app.mount('/static', CacheStaticFiles(directory='static'), name='static')
 
 tz = timezone('Africa/Nairobi')

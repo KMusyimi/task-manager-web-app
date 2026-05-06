@@ -16,7 +16,7 @@ db_pool = None
 
 
 @asynccontextmanager
-async def database_lifespan(app: FastAPI):
+async def database_lifespan(_: FastAPI):
     global db_pool
     try:
         db_pool = await create_pool(**mySqlConf, minsize=1, maxsize=10)

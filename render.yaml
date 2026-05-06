@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: tasker-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # AUTHENTICATION (Placeholder keys)
+      - key: SECRET_KEY
+        sync: false
+      - key: REFRESH_KEY
+        sync: false
+      - key: ACCESS_TOKEN_KEY
+        sync: false
+      - key: ACCESS_TOKEN_MAX_AGE
+        value: "30" 
+      - key: REFRESH_TOKEN_MAX_AGE
+        value: "604800"
+      - key: REFRESH_TOKEN_COOKIE_NAME
+        value: refresh_token
+      - key: REFRESH_TOKEN_DOMAIN
+        value: .onrender.com
+
+      # DATABASE (AIVEN)
+      - key: DB_HOST
+        value: mysql-taskerdb-kennmusyimi97-be49.i.aivencloud.com
+      - key: DB_PORT
+        value: "28497"
+      - key: DB_USER
+        value: avnadmin
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        value: defaultdb
+
+      # REDIS (UPSTASH)
+      - key: REDIS_URL
+        sync: false

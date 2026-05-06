@@ -12,15 +12,16 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_RENEWAL_THRESHOLD: timedelta = timedelta(hours=24)
     REFRESH_TOKEN_COOKIE_NAME: str
     REFRESH_TOKEN_DOMAIN: str
-    REDIS_HOST: str
-    REDIS_PORT: int
+    REDIS_URL: str
     DB_HOST: str
     DB_NAME: str
     DB_USER: str
     DB_PASSWORD: str
     DB_PORT: int
+
     class Config:
         env_file = '.env'
+        extra = 'ignore'
 
 
 settings = Settings()

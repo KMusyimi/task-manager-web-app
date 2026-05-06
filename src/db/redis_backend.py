@@ -17,10 +17,9 @@ logger = logging.getLogger("users_logger")
 @asynccontextmanager
 async def redis_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global redis_client
-    redis_client = redis.StrictRedis(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        db=0,
+    redis_client = redis.from_url(
+        settings.REDIS_URL,
+        encoding='utf-8',
         decode_responses=True
     )
     try:
@@ -114,10 +113,10 @@ async def clear_all_user_cache(username: str) -> None:
     if not redis_client:
         logger.warning("Redis client not initialized; skipping cache lookup.")
         return None
-    
+
     # This finds all keys starting with 'user:{username}:' and deletes them
     keys = await redis_client.keys(f"user:{username}:*")
-    
+
     if keys:
         await redis_client.delete(*keys)
     else:
@@ -128,11 +127,11 @@ async def clear_all_user_cache(username: str) -> None:
 async def update_username(user_id: int, old_username: str, new_username: str):
     # 2. Invalidate the old cache key immediately
     logger.info(f'updating cached user: {old_username}')
-    
+
     if not redis_client:
         logger.warning("Redis client not initialized; skipping cache lookup.")
         return None
-    
+
     logger.info(f'deleting cached user: {old_username} to {new_username}')
     await redis_client.delete(f"user:{old_username}:id")
 
@@ -143,7 +142,7 @@ async def update_username(user_id: int, old_username: str, new_username: str):
 
 async def get_profile_url(username: str) -> Optional[str]:
     logger.info(f'fetching cached user: {username} profile')
-    
+
     if not redis_client:
         logger.warning("Redis client not initialized; skipping cache lookup.")
         return None
