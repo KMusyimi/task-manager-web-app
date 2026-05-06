@@ -17,6 +17,7 @@ dependencies = [
     "asyncmy",
     "mysql-connector-python",
     "PyJWT",
+    "pytz", 
     "python-jose[cryptography]",
     "passlib[bcrypt]",
 ]
