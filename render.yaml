@@ -6,7 +6,9 @@ services:
     startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.10
+        value: 3.12.10 
+      - key: PYTHONPATH
+        value: .
       # AUTHENTICATION (Placeholder keys)
       - key: ACCESS_KEY
         sync: false
