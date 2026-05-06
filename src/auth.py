@@ -8,7 +8,7 @@ from jose import JWTError, jwt
 from pytz import timezone
 from src.config import settings
 
-SECRET_KEY = settings.SECRET_KEY
+SECRET_KEY = settings.ACCESS_KEY
 REFRESH_KEY = settings.REFRESH_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_MAX_AGE = settings.ACCESS_TOKEN_MAX_AGE
@@ -62,7 +62,7 @@ def verify_token(token: str, token_type: str = 'access'):
             headers={'WWW-Authenticate': "Bearer"})
 
 
-def auth_token_response(token_data: dict[str, object], msg:str) -> JSONResponse:
+def auth_token_response(token_data: dict[str, object], msg: str) -> JSONResponse:
     logger.debug(f'Auth token response')
     access_token = create_access_token(
         payload=token_data)
@@ -77,7 +77,7 @@ def auth_token_response(token_data: dict[str, object], msg:str) -> JSONResponse:
             status_code=400,
             content={"detail": "Invalid token data: 'sub' must be a string"}
         )
-    
+
     logger.info(f'Processing auth token response for user {token_data['sub']}')
 
     response = JSONResponse(content={

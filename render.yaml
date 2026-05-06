@@ -6,11 +6,9 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       # AUTHENTICATION (Placeholder keys)
-      - key: SECRET_KEY
+      - key: ACCESS_KEY
         sync: false
       - key: REFRESH_KEY
-        sync: false
-      - key: ACCESS_TOKEN_KEY
         sync: false
       - key: ACCESS_TOKEN_MAX_AGE
         value: "30" 

@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings  # type: ignore
 
 
 class Settings(BaseSettings):
-    SECRET_KEY: str
+    ACCESS_KEY: str
     REFRESH_KEY: str
     ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_MAX_AGE: int
