@@ -9,6 +9,7 @@ from mysql.connector import Error, ProgrammingError
 from api.auth import REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN, auth_token_response
 from api.compress_profile_img import process_profile_img
 from api.db.database import DB_NAME, get_session
+from api.config import settings
 from api.db.redis_backend import (add_jti_block_list, delete_profile_url,
                                   set_profile_url,
                                   set_user_token_v, update_username)
@@ -17,6 +18,9 @@ from api.models.entities import (TokenData, UploadResponse, UserChangePassword,
 from api.users import users
 from api.utils import (get_current_user, get_current_user_jti,
                        validate_auth_creds, validate_change_password)
+
+BUILD = settings.BUILD
+IS_LOCAL = BUILD == 'development'
 
 user_router = APIRouter(prefix='/users/{username}', tags=['users'])
 
@@ -224,8 +228,8 @@ async def change_user_password(user: UserChangePassword,
                                 value='',
                                 httponly=True,
                                 secure=True,
-                                samesite="lax",
-                                domain=REFRESH_TOKEN_DOMAIN,
+                                samesite="lax" if IS_LOCAL else "none",
+                                domain=REFRESH_TOKEN_DOMAIN if IS_LOCAL else None,
                                 max_age=-1)
 
             logger.info(

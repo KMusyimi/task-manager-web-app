@@ -1,10 +1,12 @@
 import logging
+import os
 import tracemalloc
 
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from mysql.connector import Error
+import uvicorn
 from api.app_lifespans import master_lifespan
 from api.routes.users_router import user_router
 from api.db.database import get_session
@@ -55,6 +57,10 @@ app.include_router(task_router)
 app.include_router(user_router)
 
 
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy"}
+
 @app.get("/api/recommendations")
 async def getRecommendations(conn: Connection = Depends(get_session)):
     try:
@@ -67,4 +73,3 @@ async def getRecommendations(conn: Connection = Depends(get_session)):
     except Error as e:
         raise HTTPException(
             status_code=500, detail=f"Something went wrong: {e}")
-

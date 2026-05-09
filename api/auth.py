@@ -14,9 +14,11 @@ ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_MAX_AGE = settings.ACCESS_TOKEN_MAX_AGE
 
 REFRESH_TOKEN_COOKIE_NAME = settings.REFRESH_TOKEN_COOKIE_NAME
-REFRESH_TOKEN_MAX_AGE = settings.REFRESH_TOKEN_MAX_AGE  # 7 days/
+REFRESH_TOKEN_MAX_AGE = settings.REFRESH_TOKEN_MAX_AGE  # 7 days
 REFRESH_TOKEN_DOMAIN = settings.REFRESH_TOKEN_DOMAIN
 REFRESH_TOKEN_RENEWAL_THRESHOLD = settings.REFRESH_TOKEN_RENEWAL_THRESHOLD  # 24 hours
+BUILD = settings.BUILD
+IS_LOCAL = BUILD == 'development'
 
 tz = timezone('Africa/Nairobi')
 logger = logging.getLogger('uvicorn.access')
@@ -91,8 +93,9 @@ def auth_token_response(token_data: dict[str, object], msg: str) -> JSONResponse
         value=refresh_token,
         httponly=True,
         secure=True,
-        samesite="lax",
-        domain=REFRESH_TOKEN_DOMAIN,
+        # lax for same domain and none different domains
+        samesite="lax" if IS_LOCAL else "none",
+        domain=REFRESH_TOKEN_DOMAIN if IS_LOCAL else None,
         max_age=REFRESH_TOKEN_MAX_AGE
     )
     logger.info(f'User: {token_data['sub']} response success')

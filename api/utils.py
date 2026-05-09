@@ -20,6 +20,8 @@ from api.models.entities import (RefreshTokenData, TokenData, User,
 from api.users import users
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
+
+
 tz = timezone('Africa/Nairobi')
 """Validates if the provided email meets standard patterns."""
 # Define a regex pattern for a valid email address
@@ -30,6 +32,7 @@ tz = timezone('Africa/Nairobi')
     A literal period (.).
     Two to four letters for the TLD (e.g., .com, .org).
 """
+
 EMAIL_RGX_PATTERN = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 USERNAME_RGX_PATTERN = r"^[A-Za-z0-9_-]{5,20}$"
 PASSWORD_RGX_PATTERN = r"(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[^\w\s]).{8,}"

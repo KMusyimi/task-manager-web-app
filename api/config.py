@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings  # type: ignore
 
 
 class Settings(BaseSettings):
+    BUILD: str
     ACCESS_KEY: str
     REFRESH_KEY: str
     ALGORITHM: str = 'HS256'

@@ -12,6 +12,7 @@ from api.auth import (REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN,
                       REFRESH_TOKEN_MAX_AGE, REFRESH_TOKEN_RENEWAL_THRESHOLD, auth_token_response,
                       create_access_token, create_refresh_token)
 from api.db.database import get_session
+from api.config import settings
 from api.db.redis_backend import add_jti_block_list, set_cache_user_id, set_user_token_v
 from api.models.entities import RefreshTokenData, TokenData, User, UserCreate, UserTokenJTI
 from api.users import users
@@ -20,10 +21,12 @@ from api.utils import (get_current_user, get_current_user_jti,
                        validate_login_creds)
 
 # TODO: user routes
-auth_router = APIRouter(prefix='/auth', tags=['auth'])
-tz = timezone('Africa/Nairobi')
-
 logger = logging.getLogger('users_logger')
+auth_router = APIRouter(prefix='/auth', tags=['auth'])
+
+tz = timezone('Africa/Nairobi')
+BUILD = settings.BUILD
+IS_LOCAL = BUILD == 'development'
 
 
 @auth_router.post('/login', status_code=status.HTTP_200_OK)
@@ -141,8 +144,8 @@ async def revoke_token(users_jti: UserTokenJTI = Depends(get_current_user_jti)):
                             value='',
                             httponly=True,
                             secure=True,
-                            samesite="lax",
-                            domain=REFRESH_TOKEN_DOMAIN,
+                            samesite="lax" if IS_LOCAL else "none",
+                            domain=REFRESH_TOKEN_DOMAIN if IS_LOCAL else None,
                             max_age=-1)
 
         return response
@@ -196,8 +199,8 @@ async def get_new_access_token(token: RefreshTokenData = Depends(get_refresh_tok
                 value=new_refresh_token,
                 httponly=True,
                 secure=True,
-                samesite="lax",
-                domain=REFRESH_TOKEN_DOMAIN,
+                samesite="lax" if IS_LOCAL else "none",
+                domain=REFRESH_TOKEN_DOMAIN if IS_LOCAL else None,
                 max_age=REFRESH_TOKEN_MAX_AGE
             )
 
