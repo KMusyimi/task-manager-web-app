@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASSWORD: str
     DB_PORT: int
+    AIVEN_CA_CERT_PATH: str
 
     class Config:
         env_file = '.env'

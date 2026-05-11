@@ -79,7 +79,7 @@ class Users():
                 user_record = await self.get_user_in_db(cursor=cursor, credentials=username)
 
                 if user_record is None:
-                    logger.warn('fetching user record not found')
+                    logger.info('fetching user record not found')
                     return None
 
                 user_id = user_record.userID

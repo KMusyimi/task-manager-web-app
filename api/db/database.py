@@ -12,6 +12,7 @@ DB_USER = settings.DB_USER
 DB_PASSWORD = settings.DB_PASSWORD
 DB_PORT = settings.DB_PORT
 BUILD = settings.BUILD
+AIVEN_CA_PATH = settings.AIVEN_CA_CERT_PATH
 
 mySqlConf = {
     "host": DB_HOST,
@@ -30,7 +31,7 @@ async def get_ssl_context():
     if IS_LOCAL:
         return None
 
-    ca_path = "/secrets/ca.pem"
+    ca_path = AIVEN_CA_PATH
 
     if not os.path.exists(ca_path):
         logger.error(f"SSL Certificate not found at {ca_path}")
