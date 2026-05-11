@@ -1,10 +1,13 @@
+import io
 import logging
+import cloudinary  # type: ignore
+import cloudinary.uploader  # type: ignore
 
 from fastapi.responses import JSONResponse
 
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from mysql.connector import Error, ProgrammingError
 from api.auth import REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN, auth_token_response
 from api.compress_profile_img import process_profile_img
@@ -18,13 +21,76 @@ from api.models.entities import (TokenData, UploadResponse, UserChangePassword,
 from api.users import users
 from api.utils import (get_current_user, get_current_user_jti,
                        validate_auth_creds, validate_change_password)
+from fastapi import BackgroundTasks
 
 BUILD = settings.BUILD
+CLOUD_NAME = settings.CLOUDINARY_CLOUD_NAME
+API_KEY = settings.CLOUDINARY_API_KEY
+API_SECRET = settings.CLOUDINARY_API_SECRET
+
 IS_LOCAL = BUILD == 'development'
 
 user_router = APIRouter(prefix='/users/{username}', tags=['users'])
 
 logger = logging.getLogger("users_logger")
+
+cloudinary.config(
+    cloud_name=CLOUD_NAME,
+    api_key=API_KEY,
+    api_secret=API_SECRET,
+    secure=True
+)
+
+
+async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: str):
+    """
+        This runs in the background. We use io.BytesIO to 
+        turn the raw bytes back into a file-like object for Cloudinary.
+    """
+    try:
+        async with conn.cursor(cursor=DictCursor) as cursor:
+            params = (username, '')
+
+            user_id = await users.get_user_id(cursor, params)
+
+            logger.info(f'Uploading to cloudinary')
+            result = cloudinary.uploader.upload(
+                io.BytesIO(initial_bytes=file_bytes),
+                folder=f'profile/user_{user_id}/',
+                public_id="avatar",
+                overwrite=True,
+                invalidate=True,
+                transformation=[
+                    {"width": 400, "height": 400, "crop": "fill", "gravity": "face",
+                     "quality": "auto", "fetch_format": "auto"}
+                ]
+            )
+            logger.info(
+                f"Upload successful for user {user_id}: {result['secure_url']}")
+            IMG_URL = result.get("secure_url")
+            change_profile_params = (user_id, IMG_URL)
+
+            await set_profile_url(username=username, new_url=IMG_URL)
+
+            await cursor.callproc('change_profile_image', change_profile_params)
+            await conn.commit()
+
+    except ProgrammingError as e:
+        await delete_profile_url(username=username)
+        await conn.rollback()
+
+        logger.error(f"Upload error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error during profile image url update: {e}"
+        )
+
+    except Exception as e:
+        await delete_profile_url(username=username)
+        await conn.rollback()
+
+        logger.error(f"Upload error: {e}")
+        raise e
 
 
 @user_router.get('/profile', status_code=status.HTTP_200_OK, response_model=UserGet)
@@ -58,56 +124,20 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while fetching profile.")
 
 
-@user_router.post('/upload', status_code=status.HTTP_200_OK, response_model=UploadResponse)
-async def upload_profile_image(profile_image: UploadFile = File(...),
+@user_router.post('/upload-profile', status_code=status.HTTP_200_OK, response_model=UploadResponse)
+async def upload_profile_image(background_task: BackgroundTasks,
+                               file_bytes: bytes = Depends(
+                                   process_profile_img),
                                conn: Connection = Depends(get_session),
                                current_user: TokenData = Depends(get_current_user)):
+    background_task.add_task(
+        upload_to_cloudinary, file_bytes, conn, current_user.sub)
 
-    try:
-        async with conn.cursor(cursor=DictCursor) as cursor:
-            params = (current_user.sub, '')
-            user_id = await users.get_user_id(cursor, params)
-
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User does not exist")
-
-            NEW_PROFILE_URL = await process_profile_img(profile_image, user_id)
-
-            await users.delete_old_profile_url(cursor=cursor,
-                                               username=current_user.sub)
-
-            change_profile_params = (user_id, NEW_PROFILE_URL)
-
-            await cursor.callproc('change_profile_image', change_profile_params)
-            await conn.commit()
-
-            await set_profile_url(username=current_user.sub, new_url=NEW_PROFILE_URL)
-
-            return {
-                "success": True,
-                "message": "Profile image uploaded successfully"
-            }
-
-    except ProgrammingError as e:
-        await conn.rollback()
-        await delete_profile_url(username=current_user.sub)
-
-        logger.error(f"Upload error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error during profile image url update: {e}"
-        )
-    except Exception as e:
-        await conn.rollback()
-        await delete_profile_url(username=current_user.sub)
-
-        logger.error(f"Upload error: {e}")
-        raise e
-
-    finally:
-        await profile_image.close()
+    return {
+        "success": True,
+        "status": "processing",
+        "message": "Profile image uploaded successfully"
+    }
 
 
 @user_router.put('/edit-profile', status_code=status.HTTP_200_OK)
@@ -218,7 +248,7 @@ async def change_user_password(user: UserChangePassword,
             await set_user_token_v(current_user.sub, version=new_version)
 
             token_data = {'sub': current_user.sub, 'v': new_version}
-            
+
             response = JSONResponse(
                 content={
                     "message": 'Password change successfully. You have been logged out from all devices.'},

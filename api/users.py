@@ -1,16 +1,14 @@
 import logging
 from api.db.database import DB_NAME
 import bcrypt  # type: ignore
-from pathlib import Path
 from typing import Optional
 
-from fastapi.concurrency import run_in_threadpool
 
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import HTTPException, status
 from mysql.connector import ProgrammingError
 from passlib.context import CryptContext
-from api.db.redis_backend import (delete_profile_url, get_cache_user_id, get_profile_url,
+from api.db.redis_backend import (get_cache_user_id, get_profile_url,
                                   set_cache_user_id)
 from api.models.entities import UserCreate, UserInDb
 
@@ -20,7 +18,6 @@ logger = logging.getLogger("users_logger")
 if not hasattr(bcrypt, "__about__"):
     bcrypt.__about__ = type('about', (object,), {
                             '__version__': bcrypt.__version__})
-
 
 class Users():
     def __init__(self, pwd_context: CryptContext = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__ident="2b")) -> None:
@@ -120,39 +117,6 @@ class Users():
             return db_profile_url
 
         return cached_profile_url
-
-    async def delete_old_profile_url(self, cursor: DictCursor, username: str):
-        old_url = await self.get_user_profile_url(cursor=cursor, username=username)
-
-        if old_url is None:
-            logger.info(
-                f"No existing profile image to delete for user {username}.")
-            return
-        logger.info(old_url)
-        current_dir = Path(__file__).resolve().parent
-        base_dir = (current_dir.parent / "static").resolve()
-
-        target_file = (base_dir / old_url.lstrip("/")).resolve()
-        logger.info(f'delete profile target file {target_file}')
-
-        if not str(target_file).startswith(str(base_dir)):
-            logger.error(
-                f"Security Warning: Attempted to delete file outside static dir: {target_file}")
-            return
-
-        if target_file.exists() and target_file.is_file():
-            try:
-                # For high-performance, wrap in a threadpool or use anyio
-                await run_in_threadpool(target_file.unlink)
-                logger.info(f"Deleted old profile pic: {target_file}")
-                await delete_profile_url(username=username)
-
-            except Exception as e:
-                logger.error(f"Failed to delete {target_file}: {e}")
-                # Usually, you don't want to fail the whole request just because
-                # an old file couldn't be deleted. Consider logging instead of raising.
-        else:
-            logger.warning(f"File not found on disk at: {target_file}")
 
 
 users = Users()

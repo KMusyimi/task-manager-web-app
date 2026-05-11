@@ -37,13 +37,10 @@ app.add_middleware(
 
 
 class CacheStaticFiles(StaticFiles):
-    def __init__(self, *args, **kwargs):
-        self.cache_max_age = kwargs.pop("cache_max_age", 31536000)
-        super().__init__(*args, **kwargs)
-
     def file_response(self, *args, **kwargs) -> Response:
         response = super().file_response(*args, **kwargs)
-        response.headers["Cache-Control"] = f"public, max-age={self.cache_max_age}, immutable"
+        # 1 year cache for static UI elements
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
 # serves my static files
