@@ -167,6 +167,8 @@ async def set_profile_url(username: str, new_url: str) -> Optional[str]:
         return None
 
     redis_key = f"user:{username}:profile_url"
+    await delete_profile_url(username=username)
+    
     await redis_client.setex(redis_key, 3600 * 24, new_url)  # 24-hour cache
     logger.info(f'set cached user: {username} profile url')
 

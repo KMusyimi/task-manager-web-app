@@ -80,10 +80,13 @@ async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: st
             # Offload blocking upload call to a background thread loop
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(executor, _sync_upload)
+            
+            cloudinary_version = result.get("version")
+            
             logger.info(
                 f"Upload successful for user {user_id}: {result['secure_url']}")
             IMG_URL = result.get("secure_url")
-            change_profile_params = (user_id, IMG_URL)
+            change_profile_params = (user_id, IMG_URL, cloudinary_version)
 
             await set_profile_url(username=username, new_url=IMG_URL)
 
