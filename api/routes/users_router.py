@@ -77,7 +77,6 @@ async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: st
                     ]
                 )
 
-            
             # Offload blocking upload call to a background thread loop
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(executor, _sync_upload)
@@ -130,6 +129,7 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                         'username': current_user.sub,
                         'email': user_record.get('email'),
                         'profile_img_url': user_record.get('profile_img_url'),
+                        'avatar_version': user_record.get('avatar_version'),
                         'bio': user_record.get('bio'),
                         'role': user_record.get('role'),
                         'phone_number': user_record.get('phone_number'),
