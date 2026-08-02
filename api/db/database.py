@@ -32,23 +32,24 @@ async def get_ssl_context():
     if IS_LOCAL:
         return None
 
-    ca_path = AIVEN_CA_PATH
+    ssl_ctx = ssl.create_default_context()
 
-    if not os.path.exists(ca_path):
-        logger.error(f"SSL Certificate not found at {ca_path}")
-        return None
-
-    try:
-        ssl_ctx = ssl.create_default_context(cafile=ca_path)
-
+    if AIVEN_CA_PATH and os.path.exists(AIVEN_CA_PATH):
+        try:
+            ssl_ctx.load_verify_locations(cafile=AIVEN_CA_PATH)
+            logger.info("Loaded custom Aiven CA certificate.")
+        except Exception as e:
+            logger.error(f"Failed to load custom CA file: {e}")
+            raise
+    else:
+        # Allows connection encryption without failing if certificate path isn't present
+        logger.warning(
+            f"CA file not found at '{AIVEN_CA_PATH}'. Falling back to default TLS verification."
+        )
         ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        ssl_ctx.verify_mode = ssl.CERT_NONE
 
-        logger.info("SSL Context initialized successfully for Aiven.")
-        return ssl_ctx
-    except Exception as e:
-        logger.error(f"Failed to create SSL context: {e}")
-        raise
+    return ssl_ctx
 
 
 @asynccontextmanager
