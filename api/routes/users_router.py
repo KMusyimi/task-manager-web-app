@@ -121,7 +121,7 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User does not exist")
 
-            select_stmt = f"""SELECT email, profile_img_url, phone_number,bio, role, department, avatar_color,DATE_FORMAT(create_date, '%%M %%Y') AS 'joined_in'  from {DB_NAME}.user WHERE userID = %(user_id)s"""
+            select_stmt = f"""SELECT email, profile_img_url, avatar_version,phone_number,bio, role, department, avatar_color,DATE_FORMAT(create_date, '%%M %%Y') AS 'joined_in'  from {DB_NAME}.user WHERE userID = %(user_id)s"""
 
             await cursor.execute(select_stmt, {'user_id': user_id})
             user_record = await cursor.fetchone()
