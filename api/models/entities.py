@@ -82,6 +82,9 @@ class UserUpdate(User):
                                       description="Users work department ")
     avatar_color: str = Field(default='#6B5FED', min_length=7, max_length=7,
                               description="Users fallback avatar color")
+    avatar_version: int = Field(
+        default=1, description="Users fallback avatar version")
+
     class Config:
         from_attributes = True
 
@@ -100,7 +103,8 @@ class UserGet(User):
     avatar_color: str = Field(default='#6B5FED', min_length=7, max_length=7,
                               description="Users fallback avatar color")
 
-    joined_in: Optional[str] = Field(default='2025', description='The year users joined')
+    joined_in: Optional[str] = Field(
+        default='2025', description='The year users joined')
 
 
 class UserInDb(User):

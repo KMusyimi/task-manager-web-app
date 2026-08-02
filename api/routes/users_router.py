@@ -3,6 +3,8 @@ import io
 import logging
 import cloudinary  # type: ignore
 import cloudinary.uploader  # type: ignore
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.responses import JSONResponse
 
@@ -42,6 +44,8 @@ cloudinary.config(
     secure=True
 )
 
+executor = ThreadPoolExecutor(max_workers=5)
+
 
 async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: str):
     """
@@ -53,19 +57,30 @@ async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: st
             params = (username, '')
 
             user_id = await users.get_user_id(cursor, params)
+            target_public_id = f"profile/user_{user_id}/avatar"
 
-            logger.info(f'Uploading to cloudinary')
-            result = cloudinary.uploader.upload(
-                io.BytesIO(initial_bytes=file_bytes),
-                folder=f'profile/user_{user_id}/',
-                public_id="avatar",
-                overwrite=True,
-                invalidate=True,
-                transformation=[
-                    {"width": 400, "height": 400, "crop": "fill", "gravity": "face",
-                     "quality": "auto", "fetch_format": "auto"}
-                ]
-            )
+            def _sync_upload():
+                return cloudinary.uploader.upload(
+                    io.BytesIO(file_bytes),
+                    public_id=target_public_id,
+                    overwrite=True,
+                    invalidate=True,  # Purges CDN edge cache instantly
+                    transformation=[
+                        {
+                            "width": 400,
+                            "height": 400,
+                            "crop": "fill",
+                            "gravity": "face",
+                            "quality": "auto",
+                            "fetch_format": "auto"
+                        }
+                    ]
+                )
+
+            
+            # Offload blocking upload call to a background thread loop
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(executor, _sync_upload)
             logger.info(
                 f"Upload successful for user {user_id}: {result['secure_url']}")
             IMG_URL = result.get("secure_url")
@@ -122,7 +137,6 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                         'avatar_color': user_record.get('avatar_color'),
                         'joined_in': user_record.get('joined_in')}
 
-            
             return UserGet(**user_map)
 
     except Error as e:
@@ -183,8 +197,7 @@ async def edit_profile(user: UserUpdate,
                     SELECT username FROM {DB_NAME}.user WHERE userID = user_id;
                 END;
             """
-            
-            
+
             # creating my dynamic proc
             await cursor.execute(create_proc)
             # maintain the exact same order
