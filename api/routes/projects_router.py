@@ -1,6 +1,7 @@
 
 import logging
-from datetime import date, datetime
+from typing import List
+
 
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
@@ -9,9 +10,8 @@ from fastapi.responses import JSONResponse
 from mysql.connector import Error
 from pydantic import ValidationError
 from api.db.database import DB_NAME, get_session
-from api.models.entities import (Project, ProjectAdd, ProjectResponse,
-                                 ProjectsResponse, ProjectTaskGet,
-                                 ProjectUpdate, TaskResponse, TokenData)
+from api.models.entities import (Project, ProjectAdd, ProjectGetResponse, ProjectSuccessResponse,
+                                 ProjectUpdate, TokenData)
 from api.users import users
 from api.utils import get_current_user
 
@@ -20,7 +20,7 @@ projects_router = APIRouter(prefix='/projects/{username}', tags=['projects'])
 logger = logging.getLogger("users_logger")
 
 
-@projects_router.post('/', status_code=status.HTTP_201_CREATED, response_model=ProjectResponse)
+@projects_router.post('/', status_code=status.HTTP_201_CREATED, response_model=ProjectSuccessResponse)
 async def add_project(
         project: ProjectAdd,
         conn: Connection = Depends(get_session),
@@ -31,21 +31,24 @@ async def add_project(
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
 
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User does not exist")
-
             params = (user_id, project.project_name, project.color)
             await cursor.callproc('add_project', params)
+            
+            project_record = await cursor.fetchone()
 
+            if not project_record:
+                await conn.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to retrieve newly created project."
+                )
+                
             await conn.commit()
 
-            project_record = await cursor.fetchone()
 
             project_model = Project(**project_record)
 
-            return ProjectResponse(**{
+            return ProjectSuccessResponse(**{
                 'projectID': project_model.projectID,
                 'message': f'{project_model.project_name} added successfully'})
 
@@ -56,7 +59,7 @@ async def add_project(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while creating project.")
 
 
-@projects_router.post('/{project_id}/duplicate', status_code=status.HTTP_201_CREATED, response_model=ProjectResponse)
+@projects_router.post('/{project_id}/duplicate', status_code=status.HTTP_201_CREATED, response_model=ProjectSuccessResponse)
 async def duplicate_project(
         project_id: int,
         conn: Connection = Depends(get_session),
@@ -67,19 +70,24 @@ async def duplicate_project(
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
 
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User does not exist")
-
             await cursor.callproc('duplicate_user_project',
                                   (user_id, project_id))
+            
+            project_record = await cursor.fetchone()
+
+            if not project_record:
+                await conn.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to retrieve newly created project."
+                )
+                
             await conn.commit()
 
-            project_record = await cursor.fetchone()
-            project_model = Project(**project_record)
 
-            return ProjectResponse(**{
+            project_model = Project(**project_record)
+            
+            return ProjectSuccessResponse(**{
                 'projectID': project_model.projectID,
                 'message': f'{project_model.project_name} duplicated successfully'})
 
@@ -97,78 +105,35 @@ async def duplicate_project(
 
 
 # TODO: add a response model
-@projects_router.get('/', response_model=ProjectsResponse, status_code=status.HTTP_200_OK)
+@projects_router.get('/', response_model=List[ProjectGetResponse], status_code=status.HTTP_200_OK)
 async def get_user_projects(conn: Connection = Depends(get_session),
-                            current_user: TokenData = Depends(
-                                get_current_user),
-                            filter_date=date.today()):
-    # TODO: UPDATE STATUS
-    SELECT_STMT = f"SELECT name FROM {DB_NAME}.status;"
-    projects_map = {}
+                            current_user: TokenData = Depends(get_current_user)):
     try:
 
         async with conn.cursor(cursor=DictCursor) as cursor:
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
 
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User does not exist")
+            await cursor.callproc('get_user_projects', (user_id,))
 
-            await cursor.callproc('get_user_projects_tasks', (user_id, filter_date))
             results = await cursor.fetchall()
-            
-            for result in results:
-                
-                project_id = result.get('projectID')
-
-                if result.get('projectID') not in projects_map:
-                    projects_map[project_id] = ProjectTaskGet(
-                        **result)
-
-                current_project = projects_map[project_id]
-                
-                if result.get('taskID') is not None:
-                    task = TaskResponse(**result)
-
-                    task.color = current_project.color
-                    task.project_name = current_project.project_name
-
-                    end_date = task.end_date
-
-                    # Check if it's actually an object before formatting to avoid crashes
-                    if isinstance(end_date, datetime):
-                        task.display_date = end_date.strftime("%#d %B")
-
-                    elif isinstance(end_date, str):
-                        # task date in as a string
-                        dt = datetime.strptime(end_date, "%Y-%m-%d %H:%M:%S")
-                        task.display_date = dt.strftime("%-d %B")
-                    
-                    else:
-                        task.display_date = "No due date"
-
-                    tasks = current_project.tasks
-                    tasks.append(task)
-     
-            return ProjectsResponse(projects=list(projects_map.values()))
+            return results
 
     except ValidationError as e:
-        logger.error(f'Error when validating model {e}')
+        logger.error(f'Error when validating model {str(e)}')
         await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="An error occurred while fetching projects.")
 
     except Error as e:
-        logger.error(f"Database operation error: {e}")
+        logger.error(f"Database operation error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An error occurred while fetching projects.")
 
 # TODO: change to patch from put
 
 
-@projects_router.put('/{project_id}', status_code=status.HTTP_200_OK, response_model=ProjectResponse)
+@projects_router.put('/{project_id}', status_code=status.HTTP_200_OK, response_model=ProjectSuccessResponse)
 async def update_project(
         project_id: int,
         project: ProjectUpdate,
@@ -180,11 +145,6 @@ async def update_project(
             params = (current_user.sub, '')
 
             user_id = await users.get_user_id(cursor, params)
-
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User does not exist")
 
             update_data = {
                 key: value for key, value in project.model_dump().items() if value
@@ -202,7 +162,7 @@ async def update_project(
 
             await conn.commit()
 
-            return ProjectResponse(**{
+            return ProjectSuccessResponse(**{
                 'message': f'Project update successful',
                 'projectID': project_id})
 
@@ -230,12 +190,7 @@ async def delete_project(
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
 
-            if user_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User does not exist")
-
-            delete_stmt = "DELETE from projects WHERE projectID = %(project_id)s AND userID = %(user_id)s"
+            delete_stmt = f"DELETE from {DB_NAME}.projects WHERE projectID = %(project_id)s AND userID = %(user_id)s"
 
             await cursor.execute(
                 delete_stmt, {'project_id': project_id, 'user_id': user_id})
@@ -248,3 +203,6 @@ async def delete_project(
         await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred while deleting projects.")
+
+
+

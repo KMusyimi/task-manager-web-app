@@ -8,7 +8,7 @@ from jose import JWTError, jwt
 from pytz import timezone
 from api.config import settings
 
-SECRET_KEY = settings.ACCESS_KEY
+ACCESS_KEY = settings.ACCESS_KEY
 REFRESH_KEY = settings.REFRESH_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_MAX_AGE = settings.ACCESS_TOKEN_MAX_AGE
@@ -42,7 +42,7 @@ def encode_token(payload: dict[str, object], key: str, expire_mins: timedelta):
 def create_access_token(payload: dict[str, object]):
     logger.info(f'Creating access token for user {payload['sub']}')
     expire_at = timedelta(minutes=ACCESS_TOKEN_MAX_AGE)
-    return encode_token(payload, SECRET_KEY, expire_at)
+    return encode_token(payload, ACCESS_KEY, expire_at)
 
 
 def create_refresh_token(payload: dict[str, object]):
@@ -54,18 +54,18 @@ def create_refresh_token(payload: dict[str, object]):
 def verify_token(token: str, token_type: str = 'access'):
     try:
         logger.info(f'Decoding token {token_type}')
-        KEY: str = SECRET_KEY if token_type == 'access' else REFRESH_KEY
+        KEY: str = ACCESS_KEY if token_type == 'access' else REFRESH_KEY
         return jwt.decode(token, KEY.encode(), algorithms=[ALGORITHM], options={"verify_iat": True})
 
-    except JWTError:
+    except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail=f"Invalid or expired {token_type} token: {str(e)}",
             headers={'WWW-Authenticate': "Bearer"})
 
 
 def auth_token_response(token_data: dict[str, object], msg: str) -> JSONResponse:
-    logger.debug(f'Auth token response')
+    logger.info(f'Auth token response')
     access_token = create_access_token(
         payload=token_data)
 

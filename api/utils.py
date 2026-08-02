@@ -1,9 +1,8 @@
 import logging
 import random
 import re
-import secrets
 import string
-from typing import Annotated, Any, Union
+from typing import Annotated, Union
 
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
@@ -13,13 +12,12 @@ from pydantic import ValidationError
 from pytz import timezone
 from api.auth import verify_token
 from api.db.database import DB_NAME, get_session
-from api.db.redis_backend import (get_user_token_v, is_token_blacklisted,
-                                  set_user_token_v)
+from api.db.redis_backend import (get_user_token_v, set_user_token_v)
 from api.models.entities import (RefreshTokenData, TokenData, User,
                                  UserChangePassword, UserTokenJTI, UserUpdate)
 from api.users import users
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token', auto_error=False)
 
 
 tz = timezone('Africa/Nairobi')
@@ -39,108 +37,108 @@ PASSWORD_RGX_PATTERN = r"(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[^\w\s]).{8,}"
 logger = logging.getLogger("users_logger")
 
 
-def create_random_session_string() -> str:
-    # Generates a random URL-safe string
-    return secrets.token_hex(32)
+# TODO: move to auth.py
 
 
-async def get_current_user(username: Union[str, None] = None, token: str = Depends(oauth2_scheme), conn: Connection = Depends(get_session), token_type: str = 'access'):
-    try:
-        payload = verify_token(token, token_type)
+class TokenVerifier:
+    def __init__(self, required_type: str) -> None:
+        self.required_type = required_type
 
-        if username is not None and 'sub' in payload:
-            token_sub = payload['sub']
-            if token_sub != username:
+    async def __call__(self, conn: Connection = Depends(get_session), token: str = Depends(oauth2_scheme), refresh_token: Annotated[str | None, Cookie()] = None) -> dict:
+        if self.required_type == 'access':
+            if not token:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail='Operation forbidden: The authenticated user does not match the requested resource.')
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Invalid authentication credentials. Token {self.required_type.capitalize()}"
+                )
 
-    except HTTPException as e:
-        raise e
+            payload = verify_token(token, self.required_type)
 
-    except Exception as e:
-        logger.error(f'invalid {e}')
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials."
-        ) from e
-
-    token_data = await get_token_data(conn=conn, payload=payload)
-
-    return TokenData.model_validate(token_data)
-
-
-async def get_refresh_token(refresh_token: Annotated[str | None, Cookie()] = None, conn: Connection = Depends(get_session)) -> RefreshTokenData:
-    logger.info('Refreshing user token')
-    if not refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access denied. Refresh token not found.",
-            headers={"WWW-Authenticate": "Bearer"})
-    try:
-        payload = verify_token(refresh_token, token_type='refresh')
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        logger.error(f'invalid credentials {e}')
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials."
-        ) from e
-
-    token_data = await get_token_data(conn=conn, payload=payload)
-
-    return RefreshTokenData.model_validate(token_data)
-
-
-async def check_token_version(conn: Connection, token_data: Union[TokenData, RefreshTokenData]):
-
-    token_version = token_data.version
-    cached_version = await get_user_token_v(username=token_data.sub)
-
-    if cached_version is not None:
-        if int(cached_version) != token_version:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Password changed. Please login again.")
-        return
-    # database fallback
-    async with conn.cursor(DictCursor) as cursor:
-        await cursor.execute(f"SELECT token_v FROM {DB_NAME}.user WHERE username = %s", (token_data.sub,))
-        user_record = await cursor.fetchone()
-
-        if not user_record or user_record['token_v'] != token_version:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,  detail="Session invalid.")
-
-        await set_user_token_v(username=token_data.sub, version=user_record['token_v'])
-
-
-async def get_token_data(conn: Connection, payload: dict[str, Any]):
-    try:
-        if 'refresh' not in payload:
-            token_data = TokenData(**payload)
-            cache_key = f"access_jti:{token_data.jti}"
+            return payload
 
         else:
-            token_data = RefreshTokenData(**payload)
-            cache_key = f"refresh_jti:{token_data.jti}"
+            if not refresh_token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Access denied. Refresh token not found.",
+                    headers={"WWW-Authenticate": "Bearer"})
 
-        await check_token_version(conn=conn, token_data=token_data)
+            payload = verify_token(refresh_token, token_type='refresh')
 
-        if await is_token_blacklisted(cache_key):
+        username = payload.get("sub")
+        token_version = payload.get('v')
+
+        if not isinstance(username, str):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token payload is invalid: missing user identification",
+            )
+        if token_version is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token payload is invalid: missing versioning",
+            )
+
+        await check_token_version(conn=conn, token_version=token_version, username=username)
+        logger.info(f'user: {username} token version{token_version}')
+        return payload
+
+
+async def get_current_user(username: Union[str, None] = None, payload: dict = Depends(TokenVerifier('access'))):
+    try:
+        t_username = payload.get('sub')
+        logger.info(f'getting user {t_username} access token')
+
+        if username and t_username != username:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid or revoked token",
-                headers={'WWW-Authenticate': "Bearer"})
+                detail='Operation forbidden: The authenticated user does not match the requested resource.')
+
+        token = TokenData(**payload)
+
+    except ValidationError as e:
+        logger.error(f'Error when validating token {str(e)}')
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f'Token claims missing or malformed. error: {str(e)}')
+
+    return token
+
+
+async def get_refresh_token(payload: dict = Depends(TokenVerifier('refresh'))) -> RefreshTokenData:
+    t_username = payload.get('sub')
+    logger.info(f'getting user {t_username} refresh token')
+    try:
+        refreshToken = RefreshTokenData(**payload)
 
     except ValidationError as e:
         logger.error(f'Error when validating token {e}')
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail='Token claims missing or malformed')
+            detail=f'Refresh token claims missing or malformed {str(e)}.')
 
-    return token_data
+    return refreshToken
+
+
+async def check_token_version(conn: Connection, token_version: int, username: str):
+    cached_version = await get_user_token_v(username=username)
+
+    if cached_version is not None and int(cached_version) != token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User password changed. Please login again.")
+
+    # database fallback
+    async with conn.cursor(DictCursor) as cursor:
+        await cursor.execute(f"SELECT token_v FROM {DB_NAME}.user WHERE username = %s", (username,))
+        user_record = await cursor.fetchone()
+
+        if not user_record or user_record['token_v'] != token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="User session invalid.")
+
+        # token version in database
+        t_version_db = user_record.get('token_v')
+        await set_user_token_v(username=username, version=t_version_db)
 
 
 def get_current_user_jti(
@@ -243,13 +241,8 @@ async def validate_change_password(cursor: DictCursor, user: UserChangePassword,
     current_pw = getattr(user, 'current_pw')
     new_pw = getattr(user, 'new_pw')
     confirm_pw = getattr(user, 'confirm_pw')
-    is_authorized = await users.is_authenticated_user(cursor=cursor, username=username, password=current_pw)
-
-    if not is_authorized:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={'WWW-Authenticate': 'Bearer'},
-            detail="Incorrect password. Try again!!!")
+    
+    await users.authenticate_user(cursor=cursor, username=username, password=current_pw)
 
     if new_pw != confirm_pw:
         raise HTTPException(

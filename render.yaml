@@ -33,7 +33,7 @@ services:
       - key: DB_PASSWORD
         sync: false
       - key: DB_NAME
-        value: todo_schema
+        value: tasker_app_db
 
       # REDIS (UPSTASH)
       - key: REDIS_URL

@@ -16,6 +16,7 @@ from asyncmy.connection import Connection  # type: ignore
 from api.routes.auth_router import auth_router
 from api.routes.projects_router import projects_router 
 from api.routes.tasks_router import task_router 
+from api.routes.sub_tasks_router import sub_task_router
 
 
 logger = logging.getLogger('uvicorn.access')
@@ -52,6 +53,7 @@ app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(task_router)
 app.include_router(user_router)
+app.include_router(sub_task_router)
 
 
 @app.get("/api/health")

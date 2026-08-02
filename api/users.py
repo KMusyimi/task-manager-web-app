@@ -19,6 +19,8 @@ if not hasattr(bcrypt, "__about__"):
     bcrypt.__about__ = type('about', (object,), {
                             '__version__': bcrypt.__version__})
 
+
+
 class Users():
     def __init__(self, pwd_context: CryptContext = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__ident="2b")) -> None:
         self.pwd_context = pwd_context
@@ -29,35 +31,46 @@ class Users():
     def verify_password(self, plain_password: str, hashed_password: str | None) -> bool:
         return self.pwd_context.verify(plain_password, hashed_password)
 
-    async def authenticate_user(self, cursor: DictCursor, username: str, password: str) -> UserInDb | None:
+    async def authenticate_user(self, cursor: DictCursor, username: str, password: str) -> UserInDb:
+        logger.info(f'Authenticating user')
+        
         user = await self.get_user_in_db(cursor, username)
         logger.info(f'{username} {user} authenticate user')
-        if user is None:
-            return None
 
         hashed_password = str(user.hashed_password)
+        if not self.verify_password(password, hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                headers={'WWW-Authenticate': 'Bearer'},
+                detail="Invalid password. Check password")
 
-        return None if not self.verify_password(password, hashed_password) else user
+        return user
 
-    async def is_authenticated_user(self, cursor: DictCursor, username: str, password: str) -> bool:
-        user = await self.authenticate_user(cursor=cursor, username=username, password=password)
-        return False if user is None else True
 
-    async def get_user_in_db(self, cursor: DictCursor, credentials: str) -> UserInDb | None:
+    async def get_user_in_db(self, cursor: DictCursor, credentials: str) -> UserInDb:
         params = (credentials,)
 
         logger.debug(f'{params}  authenticate user')
         await cursor.callproc('get_user_in_db', params)
         result = await cursor.fetchone()
-
-        return UserInDb(**result) if result else None
+        
+        if not result:
+            logger.warning(
+                f"Auth failed: User {credentials} not found in DB.")
+            
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Authorization failed: User not found check your credentials"
+            )
+            
+        return UserInDb(**result)
 
     async def check_user_exists(self, cursor: DictCursor, user: UserCreate) -> bool:
         params = (user.username, user.email)
         user_id = await self.get_user_id(cursor, params)
         return user_id is not None
 
-    async def get_user_id(self, cursor: DictCursor, *args) -> int | None:
+    async def get_user_id(self, cursor: DictCursor, *args) -> int:
         try:
             # Check if we received the nested tuple structure
             if args and isinstance(args[0], tuple):
@@ -75,17 +88,13 @@ class Users():
 
                 user_record = await self.get_user_in_db(cursor=cursor, credentials=username)
 
-                if user_record is None:
-                    logger.info('fetching user record not found')
-                    return None
-
                 user_id = user_record.userID
                 logger.info(f'fetch user record id {user_id} is found in db')
 
                 await set_cache_user_id(username=username, user_id=user_id)
-                return user_id
+                return int(user_id)
 
-            return c_user_id
+            return int(c_user_id)
 
         except ProgrammingError:
             raise HTTPException(

@@ -11,7 +11,7 @@ from pytz import timezone
 from api.auth import (REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN,
                       REFRESH_TOKEN_MAX_AGE, REFRESH_TOKEN_RENEWAL_THRESHOLD, auth_token_response,
                       create_access_token, create_refresh_token)
-from api.db.database import get_session
+from api.db.database import DB_NAME, get_session
 from api.config import settings
 from api.db.redis_backend import add_jti_block_list, set_cache_user_id, set_user_token_v
 from api.models.entities import RefreshTokenData, TokenData, User, UserCreate, UserTokenJTI
@@ -39,12 +39,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm =
 
             login_user = await users.authenticate_user(
                 cursor, form_data.username, form_data.password)
-
-            if not login_user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid credentials. Check username or password.",
-                    headers={"WWW-Authenticate": "Bearer"})
 
             current_version = login_user.token_v
             logger.info(
@@ -118,37 +112,48 @@ async def create_user(user: UserCreate,
     except Exception as e:
         await conn.rollback()
         logger.error(f"Failed registration {e}")
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to register user due to a server error")
 
 
 @auth_router.post('/logout', status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_token(users_jti: UserTokenJTI = Depends(get_current_user_jti)):
+async def revoke_token(current_user: TokenData = Depends(get_current_user),
+                       conn: Connection = Depends(get_session), users_jti: UserTokenJTI = Depends(get_current_user_jti)):
     try:
-        logger.info(f'{type(users_jti)}')
-        await add_jti_block_list(users_jti)
+        async with conn.cursor(cursor=DictCursor) as cursor:
+            params = (current_user.sub, '')
+            user_id = await users.get_user_id(cursor, params)
 
-        # TODO: check increment
-        # UPDATE_STATEMENT = f"""UPDATE {DB_NAME}.user SET hashed_password = %,
-        #         token_version = token_version + 1 (hashed_password)s WHERE userID=%(user_id)
-        #         RETURNING token_version"""
+            UPDATE_STATEMENT = f"""UPDATE {DB_NAME}.user SET
+                    token_v = token_v + 1 WHERE userID=%(user_id)s"""
 
-        # await conn.execute(UPDATE_STATEMENT, {'hashed_password': hashed_pw, 'user_id': user_id})
-        response = JSONResponse(
-            content={"message": "You've been logged out successfully."},
-            status_code=status.HTTP_200_OK)
-        # deleting the logout users httponly cookie
-        response.set_cookie(key=REFRESH_TOKEN_COOKIE_NAME,
-                            value='',
-                            httponly=True,
-                            secure=True,
-                            samesite="lax" if IS_LOCAL else "none",
-                            domain=REFRESH_TOKEN_DOMAIN if IS_LOCAL else None,
-                            max_age=-1)
+            await cursor.execute(UPDATE_STATEMENT, {'user_id': user_id})
+            
+            if cursor.rowcount == 0:
+                # Handle case where user_id wasn't found in DB
+                raise ValueError(f"User with ID {user_id} not found.")
+            logger.info(f'{type(users_jti)}')
 
-        return response
+            await conn.commit()
+            await add_jti_block_list(users_jti)
+
+            # TODO: check increment
+
+            response = JSONResponse(
+                content={"message": "You've been logged out successfully."},
+                status_code=status.HTTP_200_OK)
+            # deleting the logout users httponly cookie
+            response.set_cookie(key=REFRESH_TOKEN_COOKIE_NAME,
+                                value='',
+                                httponly=True,
+                                secure=True,
+                                samesite="lax" if IS_LOCAL else "none",
+                                domain=REFRESH_TOKEN_DOMAIN if IS_LOCAL else None,
+                                max_age=-1)
+
+            return response
 
     except Error as e:
         logger.error(f"Database operation error: {e}")

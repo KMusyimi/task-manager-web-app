@@ -1,3 +1,4 @@
+from datetime import datetime
 import io
 import logging
 import cloudinary  # type: ignore
@@ -105,16 +106,23 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User does not exist")
 
-            select_stmt = f"""SELECT email, profile_img_url from {DB_NAME}.user WHERE userID = %(user_id)s"""
+            select_stmt = f"""SELECT email, profile_img_url, phone_number,bio, role, department, avatar_color,DATE_FORMAT(create_date, '%%M %%Y') AS 'joined_in'  from {DB_NAME}.user WHERE userID = %(user_id)s"""
 
             await cursor.execute(select_stmt, {'user_id': user_id})
             user_record = await cursor.fetchone()
 
             user_map = {'userID': user_id,
                         'username': current_user.sub,
-                        'email': user_record['email'],
-                        'profile_img_url': user_record['profile_img_url']}
+                        'email': user_record.get('email'),
+                        'profile_img_url': user_record.get('profile_img_url'),
+                        'bio': user_record.get('bio'),
+                        'role': user_record.get('role'),
+                        'phone_number': user_record.get('phone_number'),
+                        'department': user_record.get('department'),
+                        'avatar_color': user_record.get('avatar_color'),
+                        'joined_in': user_record.get('joined_in')}
 
+            
             return UserGet(**user_map)
 
     except Error as e:
@@ -156,22 +164,15 @@ async def edit_profile(user: UserUpdate,
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User does not exist")
 
-            is_authorized = await users.is_authenticated_user(cursor, current_user.sub, user.password)
-            logger.info(f'user-> {user} {is_authorized}')
+            await users.authenticate_user(cursor, current_user.sub, user.password)
 
-            if not is_authorized:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    headers={'WWW-Authenticate': 'Bearer'},
-                    detail="Incorrect password. Try again!!!")
             # returning a key and value of the fields required to be updated
             update_data = {
                 key: value for key, value in user.model_dump().items() if value and key != 'password'
             }
-            logger.info(update_data)
 
             params_list = ", ".join(
-                [f"IN p_{key} VARCHAR(155)" for key in update_data.keys()])
+                [f"IN p_{key} VARCHAR(255)" for key in update_data.keys()])
 
             set_clause = ", ".join([f"{key} = p_{key}" for key in update_data])
 
@@ -182,8 +183,9 @@ async def edit_profile(user: UserUpdate,
                     SELECT username FROM {DB_NAME}.user WHERE userID = user_id;
                 END;
             """
-
-            # create my dynamic proc
+            
+            
+            # creating my dynamic proc
             await cursor.execute(create_proc)
             # maintain the exact same order
             args = [user_id] + list(update_data.values())
@@ -194,7 +196,7 @@ async def edit_profile(user: UserUpdate,
 
             await add_jti_block_list(token_jti)
 
-            # 5. DROP the procedure immediately
+            # DROP the procedure immediately
             await cursor.execute("DROP PROCEDURE IF EXISTS edit_user_profile")
             await conn.commit()
 

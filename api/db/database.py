@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 import logging
 import os
+from asyncmy.errors import OperationalError  # type: ignore
 from asyncmy.pool import create_pool  # type: ignore
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from api.config import settings
 import ssl
 
@@ -39,7 +40,7 @@ async def get_ssl_context():
 
     try:
         ssl_ctx = ssl.create_default_context(cafile=ca_path)
-        
+
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 
@@ -54,8 +55,8 @@ async def get_ssl_context():
 async def database_lifespan(_: FastAPI):
     global db_pool
     try:
-        db_pool = await create_pool(**mySqlConf, minsize=5, maxsize=10, 
-                                    pool_recycle=3600,
+        db_pool = await create_pool(**mySqlConf, minsize=5, maxsize=10,
+                                    pool_recycle=300,
                                     ssl=await get_ssl_context())
         logger.info("Database connection pool created.")
         yield
@@ -70,9 +71,28 @@ async def database_lifespan(_: FastAPI):
 async def get_session():
     if db_pool is None:
         logger.error(
-            "Database pool not initialized. The 'lifespan' event must run first.")
+            "Database pool not initialized. The 'lifespan' event must run first."
+        )
         raise RuntimeError(
-            "Database pool not initialized. The 'lifespan' event must run first.")
+            "Database pool not initialized. The 'lifespan' event must run first."
+        )
 
     async with db_pool.acquire() as conn:
+        try:
+            await conn.ping(reconnect=True)
+
+        except (OperationalError, Exception) as e:
+            logger.error(f"Database connection health check failed: {str(e)}")
+
+            try:
+
+                await conn.ensure_closed()
+            except Exception:
+                pass
+
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database connection unavailable due to credential or network expiry."
+            )
+
         yield conn
