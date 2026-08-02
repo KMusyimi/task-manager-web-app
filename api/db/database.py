@@ -56,9 +56,10 @@ async def get_ssl_context():
 async def database_lifespan(_: FastAPI):
     global db_pool
     try:
+        ssl_context = await get_ssl_context()
         db_pool = await create_pool(**mySqlConf, minsize=5, maxsize=10,
                                     pool_recycle=300,
-                                    ssl=await get_ssl_context())
+                                    ssl=ssl_context)
         logger.info("Database connection pool created.")
         yield
 
