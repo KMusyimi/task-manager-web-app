@@ -86,12 +86,12 @@ async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: st
             logger.info(
                 f"Upload successful for user {user_id}: {result['secure_url']}")
             IMG_URL = result.get("secure_url")
+            
             change_profile_params = (user_id, IMG_URL, cloudinary_version)
-
-            await set_profile_url(username=username, new_url=IMG_URL)
-
             await cursor.callproc('change_profile_image', change_profile_params)
             await conn.commit()
+            
+            await set_profile_url(username=username, new_url=IMG_URL)
 
     except ProgrammingError as e:
         await delete_profile_url(username=username)

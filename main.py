@@ -25,6 +25,7 @@ tracemalloc.start()
 origins = [
     "http://localhost:5173",
     "http://localhost:8080",
+    "https://tasker254.netlify.app"
 ]
 
 app = FastAPI(docs_url="/api/py/docs", lifespan=master_lifespan)
