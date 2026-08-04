@@ -47,18 +47,25 @@ cloudinary.config(
 executor = ThreadPoolExecutor(max_workers=5)
 
 
-async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: str):
+async def upload_to_cloudinary(file_bytes: bytes, username: str, conn: Connection):
     """
-        This runs in the background. We use io.BytesIO to 
+        This runs in the background. We use io.BytesIO to
         turn the raw bytes back into a file-like object for Cloudinary.
     """
     try:
         async with conn.cursor(cursor=DictCursor) as cursor:
+            # Fetch user ID
             params = (username, '')
-
             user_id = await users.get_user_id(cursor, params)
+
+            if not user_id:
+                logger.error(
+                    f"User {username} not found for avatar upload.")
+                return
+
             target_public_id = f"profile/user_{user_id}/avatar"
 
+            # Define synchronous Cloudinary upload
             def _sync_upload():
                 return cloudinary.uploader.upload(
                     io.BytesIO(file_bytes),
@@ -77,38 +84,28 @@ async def upload_to_cloudinary(file_bytes: bytes, conn: Connection, username: st
                     ]
                 )
 
-            # Offload blocking upload call to a background thread loop
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(executor, _sync_upload)
-            
+            # 2. Offload thread-blocking I/O call cleanly
+            result = await asyncio.to_thread(_sync_upload)
+
             cloudinary_version = result.get("version")
-            
+            img_url = result.get("secure_url")
+
             logger.info(
-                f"Upload successful for user {user_id}: {result['secure_url']}")
-            IMG_URL = result.get("secure_url")
-            
-            change_profile_params = (user_id, IMG_URL, cloudinary_version)
+                f"Cloudinary upload successful for user {user_id}: {img_url}")
+
+            # 3. Update database stored procedure
+            change_profile_params = (user_id, img_url, cloudinary_version)
             await cursor.callproc('change_profile_image', change_profile_params)
             await conn.commit()
-            
-            await set_profile_url(username=username, new_url=IMG_URL)
 
-    except ProgrammingError as e:
-        await delete_profile_url(username=username)
-        await conn.rollback()
-
-        logger.error(f"Upload error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error during profile image url update: {e}"
-        )
+            # Update Redis / Cache if applicable
+            await set_profile_url(username=username, new_url=img_url)
 
     except Exception as e:
-        await delete_profile_url(username=username)
         await conn.rollback()
-
-        logger.error(f"Upload error: {e}")
-        raise e
+        await delete_profile_url(username=username)
+        logger.error(
+            f"Background upload error for user '{username}': {e}", exc_info=True)
 
 
 @user_router.get('/profile', status_code=status.HTTP_200_OK, response_model=UserGet)
@@ -150,17 +147,15 @@ async def get_user_profile(conn: Connection = Depends(get_session), current_user
 
 
 @user_router.post('/upload-profile', status_code=status.HTTP_200_OK, response_model=UploadResponse)
-async def upload_profile_image(background_task: BackgroundTasks,
+async def upload_profile_image(conn:Connection = Depends(get_session),
                                file_bytes: bytes = Depends(
                                    process_profile_img),
-                               conn: Connection = Depends(get_session),
                                current_user: TokenData = Depends(get_current_user)):
-    background_task.add_task(
-        upload_to_cloudinary, file_bytes, conn, current_user.sub)
+    img_url = await upload_to_cloudinary(file_bytes, current_user.sub, conn)
 
     return {
         "success": True,
-        "status": "processing",
+        "profile_image_url": img_url,
         "message": "Profile image uploaded successfully"
     }
 

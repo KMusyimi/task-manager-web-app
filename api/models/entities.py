@@ -67,6 +67,8 @@ class User(BaseModelConfig):
 
 class UserCreate(User):
     password: str
+    profile_img_url: Optional[str] = Field(
+            default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
 
 
 class UserUpdate(User):
@@ -91,7 +93,8 @@ class UserUpdate(User):
 
 class UserGet(User):
     userID: int
-    profile_img_url: Optional[str] = None
+    profile_img_url: Optional[str] = Field(
+        default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
     bio:  Optional[str] = Field(default='', max_length=255,
                                 description="Users bio")
     phone_number: Optional[str] = Field(default='', max_length=16,

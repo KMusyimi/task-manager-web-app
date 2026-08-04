@@ -7,7 +7,7 @@ from typing import Optional
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import HTTPException, status
 from mysql.connector import ProgrammingError
-from passlib.context import CryptContext
+from passlib.context import CryptContext  # type: ignore
 from api.db.redis_backend import (get_cache_user_id, get_profile_url,
                                   set_cache_user_id)
 from api.models.entities import UserCreate, UserInDb
@@ -18,7 +18,6 @@ logger = logging.getLogger("users_logger")
 if not hasattr(bcrypt, "__about__"):
     bcrypt.__about__ = type('about', (object,), {
                             '__version__': bcrypt.__version__})
-
 
 
 class Users():
@@ -33,7 +32,7 @@ class Users():
 
     async def authenticate_user(self, cursor: DictCursor, username: str, password: str) -> UserInDb:
         logger.info(f'Authenticating user')
-        
+
         user = await self.get_user_in_db(cursor, username)
         logger.info(f'{username} {user} authenticate user')
 
@@ -46,14 +45,13 @@ class Users():
 
         return user
 
-
     async def get_user_in_db(self, cursor: DictCursor, credentials: str) -> UserInDb:
         params = (credentials,)
 
         logger.debug(f'{params}  authenticate user')
         await cursor.callproc('get_user_in_db', params)
         result = await cursor.fetchone()
-        
+
         if not result:
             logger.warning(
                 f"Auth failed: User {credentials} not found in DB.")
@@ -62,13 +60,17 @@ class Users():
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Authorization failed: User not found check your credentials"
             )
-            
+
         return UserInDb(**result)
 
     async def check_user_exists(self, cursor: DictCursor, user: UserCreate) -> bool:
-        params = (user.username, user.email)
-        user_id = await self.get_user_id(cursor, params)
-        return user_id is not None
+        try:
+            params = (user.username, user.email)
+            user_id = await self.get_user_id(cursor, params)
+            return user_id is not None
+
+        except HTTPException:
+            return False
 
     async def get_user_id(self, cursor: DictCursor, *args) -> int:
         try:
@@ -105,7 +107,7 @@ class Users():
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database response format is incorrect. 'userID' key is missing.")
 
-    async def get_user_profile_url(self, cursor: DictCursor, username: str) -> Optional[str]:
+    async def get_avatar_url(self, cursor: DictCursor, username: str) -> Optional[str]:
         logger.info(f'Getting user {username} profile url')
         cached_profile_url = await get_profile_url(username=username)
 
