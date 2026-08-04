@@ -121,24 +121,36 @@ async def get_refresh_token(payload: dict = Depends(TokenVerifier('refresh'))) -
 
 
 async def check_token_version(conn: Connection, token_version: int, username: str):
+    # 1. Try fetching from Cache
     cached_version = await get_user_token_v(username=username)
 
-    if cached_version is not None and int(cached_version) != token_version:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User password changed. Please login again.")
+    if cached_version is not None:
+        if int(cached_version) != token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User session invalid or password changed. Please login again."
+            )
+        # Cache hit and version matches -> Return early to avoid DB call
+        return
 
-    # database fallback
+    # 2. Cache Miss: Fallback to Database
     async with conn.cursor(DictCursor) as cursor:
-        await cursor.execute(f"SELECT token_v FROM {DB_NAME}.user WHERE username = %s", (username,))
+        # Use parameterized query structure or default DB connection schema
+        await cursor.execute(
+            "SELECT token_v FROM user WHERE username = %s",
+            (username,)
+        )
         user_record = await cursor.fetchone()
 
         if not user_record or user_record['token_v'] != token_version:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="User session invalid.")
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User session invalid."
+            )
 
-        # token version in database
-        t_version_db = user_record.get('token_v')
-        await set_user_token_v(username=username, version=t_version_db)
+        # 3. Re-hydrate Cache on valid DB lookup
+        db_token_version = user_record['token_v']
+        await set_user_token_v(username=username, version=db_token_version)
 
 
 def get_current_user_jti(
