@@ -78,6 +78,7 @@ class UserCreate(User):
 
 class UserUpdate(User):
     username:  Optional[str] = None
+    email: EmailStr
     password: str
     bio:  Optional[str] = Field(default='', max_length=255,
                                 description="Users bio")
@@ -98,6 +99,7 @@ class UserUpdate(User):
 
 class UserGet(User):
     userID: int
+    email: EmailStr
     profile_img_url: Optional[str] = Field(
         default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
     bio:  Optional[str] = Field(default='', max_length=255,
