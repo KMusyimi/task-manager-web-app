@@ -62,6 +62,7 @@ class Users():
             )
 
         return UserInDb(**result)
+    
 
     async def check_user_exists(self, cursor: DictCursor, user: UserCreate) -> bool:
         try:

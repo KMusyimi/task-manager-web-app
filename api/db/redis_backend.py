@@ -168,7 +168,7 @@ async def set_profile_url(username: str, new_url: str) -> Optional[str]:
 
     redis_key = f"user:{username}:profile_url"
     await delete_profile_url(username=username)
-    
+
     await redis_client.setex(redis_key, 3600 * 24, new_url)  # 24-hour cache
     logger.info(f'set cached user: {username} profile url')
 
@@ -182,3 +182,26 @@ async def delete_profile_url(username: str) -> Optional[str]:
     redis_key = f"user:{username}:profile_url"
     await redis_client.delete(redis_key)
     logger.info(f'deleted cached user: {username} profile url')
+
+
+async def set_verification_code(key: str, value: str):
+    if not redis_client:
+        logger.warning("Redis client not initialized; skipping cache lookup.")
+        return None
+
+    await redis_client.setex(key, 300, value)
+
+
+async def delete_verification_code(key: str):
+    if not redis_client:
+        logger.warning("Redis client not initialized; skipping cache lookup.")
+        return None
+
+    await redis_client.delete(key)
+    
+async def get_verification_code(key: str):
+    if not redis_client:
+        logger.warning("Redis client not initialized; skipping cache lookup.")
+        return None
+
+    await redis_client.get(key)

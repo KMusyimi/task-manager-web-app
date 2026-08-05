@@ -31,6 +31,8 @@ class ErrorLog(BaseModel):
     req_id: str
     error_message: str
 
+class EmailRequest(BaseModel):
+    email: EmailStr
 
 class DBRecommendationModel(BaseModel):
     id: int
@@ -57,19 +59,22 @@ class UserTokenJTI(BaseModel):
     refresh_jti: Optional[str]
 
 
+class VerifyCodeRequest(BaseModel):
+    email: EmailStr
+    code: str
+    
 class User(BaseModelConfig):
     username: str
-    email: Optional[EmailStr] = None
 
     class Config:
         from_attributes = True
 
 
 class UserCreate(User):
+    email:EmailStr
     password: str
-    profile_img_url: Optional[str] = Field(
-            default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
-
+    is_verified:bool = Field(default=False)
+    
 
 class UserUpdate(User):
     username:  Optional[str] = None
