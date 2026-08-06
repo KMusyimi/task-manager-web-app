@@ -23,7 +23,11 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET:str
-
+    MAIL_USERNAME:str
+    MAIL_PASSWORD:str
+    MAIL_FROM:str
+    MAIL_PORT: int
+    
     class Config:
         env_file = '.env'
         extra = 'ignore'

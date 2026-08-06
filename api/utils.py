@@ -20,6 +20,10 @@ from api.users import users
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token', auto_error=False)
 
 
+def generate_otp() -> str:
+    """Generates a random 6-digit OTP code."""
+    return f"{random.randint(100000, 999999)}"
+
 tz = timezone('Africa/Nairobi')
 """Validates if the provided email meets standard patterns."""
 # Define a regex pattern for a valid email address

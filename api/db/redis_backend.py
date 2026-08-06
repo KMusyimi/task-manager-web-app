@@ -185,6 +185,7 @@ async def delete_profile_url(username: str) -> Optional[str]:
 
 
 async def set_verification_code(key: str, value: str):
+    logger.debug(f'{key}-{value}')
     if not redis_client:
         logger.warning("Redis client not initialized; skipping cache lookup.")
         return None
@@ -200,8 +201,9 @@ async def delete_verification_code(key: str):
     await redis_client.delete(key)
     
 async def get_verification_code(key: str):
+    logger.debug(f'{key}')
     if not redis_client:
         logger.warning("Redis client not initialized; skipping cache lookup.")
         return None
 
-    await redis_client.get(key)
+    return await redis_client.get(key)

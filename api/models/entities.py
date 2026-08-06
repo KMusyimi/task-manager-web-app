@@ -60,7 +60,7 @@ class UserTokenJTI(BaseModel):
 
 
 class VerifyCodeRequest(BaseModel):
-    email: EmailStr
+    email: EmailStr = Field(default="dev@tasker.test.com", description='create user email for verification')
     code: str
     
 class User(BaseModelConfig):
@@ -74,6 +74,8 @@ class UserCreate(User):
     email:EmailStr
     password: str
     is_verified:bool = Field(default=False)
+    profile_img_url: Optional[str] = Field(
+            default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
     
 
 class UserUpdate(User):

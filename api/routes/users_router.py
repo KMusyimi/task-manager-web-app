@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import APIRouter, Depends, HTTPException, status
-from mysql.connector import Error, ProgrammingError
+from mysql.connector import Error
 from api.auth import REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN, auth_token_response
 from api.compress_profile_img import process_profile_img
 from api.db.database import DB_NAME, get_session
@@ -24,7 +24,7 @@ from api.models.entities import (TokenData, UploadResponse, UserChangePassword,
 from api.users import users
 from api.utils import (get_current_user, get_current_user_jti,
                        validate_auth_creds, validate_change_password)
-from fastapi import BackgroundTasks
+
 
 BUILD = settings.BUILD
 CLOUD_NAME = settings.CLOUDINARY_CLOUD_NAME
