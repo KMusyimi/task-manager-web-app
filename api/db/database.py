@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
 import logging
 import os
-from asyncmy.errors import OperationalError  # type: ignore
+from typing import Any, AsyncGenerator
 from asyncmy.pool import create_pool  # type: ignore
 from fastapi import FastAPI, HTTPException, status
 from api.config import settings
 import ssl
+
 
 DB_HOST = settings.DB_HOST
 DB_NAME = settings.DB_NAME
@@ -60,6 +61,7 @@ async def database_lifespan(_: FastAPI):
         db_pool = await create_pool(**mySqlConf, minsize=5, maxsize=10,
                                     pool_recycle=300,
                                     ssl=ssl_context)
+
         logger.info("Database connection pool created.")
         yield
 
@@ -70,31 +72,27 @@ async def database_lifespan(_: FastAPI):
             logger.info("Database connection pool closed.")
 
 
-async def get_session():
+async def get_session() -> AsyncGenerator[Any, None]:
+    """
+    Use inside FastAPI route signatures:
+    conn: Connection = Depends(get_session)
+    """
     if db_pool is None:
-        logger.error(
-            "Database pool not initialized. The 'lifespan' event must run first."
-        )
-        raise RuntimeError(
-            "Database pool not initialized. The 'lifespan' event must run first."
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connection pool not initialized.",
         )
 
     async with db_pool.acquire() as conn:
         try:
             await conn.ping(reconnect=True)
-
-        except (OperationalError, Exception) as e:
-            logger.error(f"Database connection health check failed: {str(e)}")
-
-            try:
-
-                await conn.ensure_closed()
-            except Exception:
-                pass
-
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database connection unavailable due to credential or network expiry."
-            )
-
+                detail="Database connection unavailable.",
+            ) from e
         yield conn
+
+# background task database conn context
+get_session_context = asynccontextmanager(get_session)

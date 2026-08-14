@@ -3,16 +3,18 @@ import random
 import re
 import string
 from typing import Annotated, Union
+import redis.asyncio as redis  # type: ignore
 
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import BackgroundTasks, Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from pytz import timezone
 from api.auth import verify_token
-from api.db.database import DB_NAME, get_session
-from api.db.redis_backend import (get_user_token_v, set_user_token_v)
+from api.db.database import get_session
+from api.db.redis_backend import (
+    get_redis)
 from api.models.entities import (RefreshTokenData, TokenData, User,
                                  UserChangePassword, UserTokenJTI, UserUpdate)
 from api.users import users
@@ -20,9 +22,8 @@ from api.users import users
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token', auto_error=False)
 
 
-def generate_otp() -> str:
-    """Generates a random 6-digit OTP code."""
-    return f"{random.randint(100000, 999999)}"
+
+
 
 tz = timezone('Africa/Nairobi')
 """Validates if the provided email meets standard patterns."""
@@ -48,7 +49,7 @@ class TokenVerifier:
     def __init__(self, required_type: str) -> None:
         self.required_type = required_type
 
-    async def __call__(self, conn: Connection = Depends(get_session), token: str = Depends(oauth2_scheme), refresh_token: Annotated[str | None, Cookie()] = None) -> dict:
+    async def __call__(self, conn: Connection = Depends(get_session), redis_client: redis.Redis = Depends(get_redis), token: str = Depends(oauth2_scheme), refresh_token: Annotated[str | None, Cookie()] = None) -> dict:
         if self.required_type == 'access':
             if not token:
                 raise HTTPException(
@@ -83,7 +84,7 @@ class TokenVerifier:
                 detail="Token payload is invalid: missing versioning",
             )
 
-        await check_token_version(conn=conn, token_version=token_version, username=username)
+        await check_token_version(conn=conn, redis_client=redis_client, token_version=token_version, username=username)
         logger.info(f'user: {username} token version{token_version}')
         return payload
 
@@ -124,9 +125,12 @@ async def get_refresh_token(payload: dict = Depends(TokenVerifier('refresh'))) -
     return refreshToken
 
 
-async def check_token_version(conn: Connection, token_version: int, username: str):
+async def check_token_version(conn: Connection, redis_client: redis.Redis, token_version: int, username: str):
     # 1. Try fetching from Cache
-    cached_version = await get_user_token_v(username=username)
+    redis_key = f"user:{username}:token_v"
+
+    cached_version = await redis_client.get(redis_key)
+    logger.info(f'{redis_key} cached successfully')
 
     if cached_version is not None:
         if int(cached_version) != token_version:
@@ -154,7 +158,9 @@ async def check_token_version(conn: Connection, token_version: int, username: st
 
         # 3. Re-hydrate Cache on valid DB lookup
         db_token_version = user_record['token_v']
-        await set_user_token_v(username=username, version=db_token_version)
+
+        await redis_client.setex(redis_key, 604800, db_token_version)
+        logger.info(f'{redis_key} successfully cached')
 
 
 def get_current_user_jti(
@@ -257,7 +263,7 @@ async def validate_change_password(cursor: DictCursor, user: UserChangePassword,
     current_pw = getattr(user, 'current_pw')
     new_pw = getattr(user, 'new_pw')
     confirm_pw = getattr(user, 'confirm_pw')
-    
+
     await users.authenticate_user(cursor=cursor, username=username, password=current_pw)
 
     if new_pw != confirm_pw:

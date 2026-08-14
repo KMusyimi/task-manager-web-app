@@ -63,8 +63,7 @@ async def complete_subtask(task_id: int,
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
 
-
-            await cursor.execute(query, (payload.is_completed, user_id, task_id,payload.subTaskID ))
+            await cursor.execute(query, (payload.is_completed, user_id, task_id, payload.subTaskID))
 
             await conn.commit()
 
@@ -106,7 +105,3 @@ async def get_sub_tasks(task_id: int, conn: Connection = Depends(get_session), c
         print(f"Database error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Something went wrong when fetching sub task {str(e)}")
-
-
-
-

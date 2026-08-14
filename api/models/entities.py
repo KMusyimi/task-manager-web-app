@@ -63,6 +63,10 @@ class VerifyCodeRequest(BaseModel):
     email: EmailStr = Field(default="dev@tasker.test.com", description='create user email for verification')
     code: str
     
+
+class ResendCodeRequest(BaseModel):
+    email: EmailStr
+    
 class User(BaseModelConfig):
     username: str
 
@@ -76,11 +80,13 @@ class UserCreate(User):
     is_verified:bool = Field(default=False)
     profile_img_url: Optional[str] = Field(
             default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
-    
+
+    class Config:
+        from_attributes = True
 
 class UserUpdate(User):
     username:  Optional[str] = None
-    email: EmailStr
+    email: Optional[EmailStr] = None
     password: str
     bio:  Optional[str] = Field(default='', max_length=255,
                                 description="Users bio")
@@ -124,10 +130,13 @@ class UserGet(User):
 
 class UserInDb(User):
     userID: int
-    email: Optional[EmailStr] = None
-    profile_img_url: Optional[str] = None
-    token_v: Optional[int] = None
+    email: EmailStr
+    profile_img_url: Optional[str] = Field(
+        default='https://res.cloudinary.com/dq4izno26/image/upload/v1785836280/person_ns4ntn.webp', description='Avatar image')
+    token_v: Optional[int] = Field(
+        default=0, description='User Token version')
     password: Optional[str] = None
+    is_verified: bool = Field(default=False, description="User is verified or not")
     hashed_password: Optional[str] = None
 
 

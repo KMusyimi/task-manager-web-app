@@ -57,7 +57,8 @@ async def fetch_single_column_segment(
 
     try:
 
-        logger.debug(f'Params - {proc_params}, {proc_name}, {type(project_id)}')
+        logger.debug(
+            f'Params - {proc_params}, {proc_name}, {type(project_id)}')
         await cursor.callproc(proc_name, proc_params)
 
         results = await cursor.fetchall()
@@ -275,7 +276,7 @@ async def get_tasks_list(
 
     except HTTPException:
         raise
-    
+
     except Exception as e:
         logger.error(f"Segmented database operation failure: {str(e)}")
         raise HTTPException(
@@ -293,7 +294,7 @@ async def get_tasks_board(conn: Connection = Depends(get_session),
         async with conn.cursor(cursor=DictCursor) as cursor:
             params = (current_user.sub, '')
             user_id = await users.get_user_id(cursor, params)
-
+            logger.info(f"user_id current {user_id}")
             if project_id is not None:
                 proc_name = "get_kanban_by_project"
                 proc_params = (user_id, project_id)
@@ -308,7 +309,9 @@ async def get_tasks_board(conn: Connection = Depends(get_session),
 
             for row in results:
                 col_id = row.get('columnID')
-                task_id = row.get('taskID')
+
+                if col_id is None:
+                    continue
 
                 if col_id not in board_map:
                     board_map[col_id] = {
@@ -317,10 +320,13 @@ async def get_tasks_board(conn: Connection = Depends(get_session),
                         "tasks": []
                     }
 
-                end_date = row.get('end_date')
-                display_date = get_display_date(end_date=end_date)
+                task_id = row.get('taskID')
 
                 if task_id is not None:
+                    
+                    end_date = row.get('end_date')
+                    display_date = get_display_date(end_date=end_date)
+                    
                     board_map[col_id]["tasks"].append({
                         "projectID": row.get('projectID'),
                         "taskID": row.get('taskID'),
@@ -338,7 +344,7 @@ async def get_tasks_board(conn: Connection = Depends(get_session),
                         "completed_subtasks": row.get('completed_subtasks'),
                         "display_date": display_date
                     })
-
+            logger.debug(f"Board map {board_map} - {results}")
             return list(board_map.values())
 
     except Error as e:

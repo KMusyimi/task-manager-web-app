@@ -65,3 +65,16 @@ docker-compose.local.yml
 # Keep the directory structure but ignore the files
 !**/static/uploads/profiles/.gitkeep
 !**/media/profiles/.gitkeep
+
+# Ignore all log files anywhere in the project
+*.log
+
+# Ignore log directories
+logs/
+*.log.*
+
+# Ignore common log output files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

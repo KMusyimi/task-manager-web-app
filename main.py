@@ -6,16 +6,15 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from mysql.connector import Error
-import uvicorn
 from api.app_lifespans import master_lifespan
-from api.routes.users_router import user_router
 from api.db.database import get_session
 from pytz import timezone
 from asyncmy.cursors import DictCursor  # type: ignore
 from asyncmy.connection import Connection  # type: ignore
 from api.routes.auth_router import auth_router
-from api.routes.projects_router import projects_router 
-from api.routes.tasks_router import task_router 
+from api.routes.projects_router import projects_router
+from api.routes.tasks_router import task_router
+from api.routes.users_router import user_router
 from api.routes.sub_tasks_router import sub_task_router
 
 
@@ -46,6 +45,7 @@ class CacheStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
+
 # serves my static files
 app.mount('/static', CacheStaticFiles(directory='static'), name='static')
 
@@ -61,6 +61,7 @@ app.include_router(sub_task_router)
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
 
 @app.get("/api/recommendations")
 async def getRecommendations(conn: Connection = Depends(get_session)):

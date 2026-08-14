@@ -2,14 +2,14 @@ import logging
 from api.db.database import DB_NAME
 import bcrypt  # type: ignore
 from typing import Optional
+import redis.asyncio as redis  # type: ignore
 
 
 from asyncmy.cursors import DictCursor  # type: ignore
 from fastapi import HTTPException, status
 from mysql.connector import ProgrammingError
 from passlib.context import CryptContext  # type: ignore
-from api.db.redis_backend import (get_cache_user_id, get_profile_url,
-                                  set_cache_user_id)
+from api.db.redis_backend import (get_redis_context)
 from api.models.entities import UserCreate, UserInDb
 
 logger = logging.getLogger("users_logger")
@@ -55,14 +55,13 @@ class Users():
         if not result:
             logger.warning(
                 f"Auth failed: User {credentials} not found in DB.")
-            
+
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Authorization failed: User not found check your credentials"
             )
 
         return UserInDb(**result)
-    
 
     async def check_user_exists(self, cursor: DictCursor, user: UserCreate) -> bool:
         try:
@@ -82,22 +81,27 @@ class Users():
             else:
                 username = args[0]
 
+            REDIS_KEY = f"user:{username}:id"
             logger.debug(f'{username} args {args}')
             # cached user id
-            c_user_id = await get_cache_user_id(username=username)
+            async with get_redis_context() as redis_client:
+                c_user_id = await redis_client.get(REDIS_KEY)
+                logger.info(f'fetching cached user:{username} successful')
 
-            if c_user_id is None:
-                logger.info('fetching user id from database')
+            if c_user_id:
+                return int(c_user_id)
 
-                user_record = await self.get_user_in_db(cursor=cursor, credentials=username)
+            logger.info('fetching user id from database')
 
-                user_id = user_record.userID
-                logger.info(f'fetch user record id {user_id} is found in db')
+            user_record = await self.get_user_in_db(cursor=cursor, credentials=username)
 
-                await set_cache_user_id(username=username, user_id=user_id)
-                return int(user_id)
+            user_id = user_record.userID
+            logger.info(f'fetch user record id {user_id} is found in db')
 
-            return int(c_user_id)
+
+            await redis_client.set(REDIS_KEY, user_id)
+            logger.info(f'caching user:{username} successful')
+            return int(user_id)
 
         except ProgrammingError:
             raise HTTPException(
@@ -108,27 +112,35 @@ class Users():
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database response format is incorrect. 'userID' key is missing.")
 
-    async def get_avatar_url(self, cursor: DictCursor, username: str) -> Optional[str]:
-        logger.info(f'Getting user {username} profile url')
-        cached_profile_url = await get_profile_url(username=username)
+    async def get_avatar_url(self, cursor: DictCursor, user_id: int) -> Optional[str]:
+        logger.info(f'Getting user {user_id} profile url')
 
-        if cached_profile_url is None:
-            logger.info(f'Getting user {username} profile url from database')
+        SELECT_STMT = f"""SELECT profile_img_url FROM {DB_NAME}.user 
+        WHERE userID = %(userID)s"""
+        async with get_redis_context() as redis_client:
+            redis_key = f"user:{user_id}:profile_url"
+            cached_avatar_url = await redis_client.get(redis_key)
 
-            SELECT_STMT = f"""SELECT profile_img_url FROM {DB_NAME}.user 
-            WHERE username = %(username)s"""
+        if cached_avatar_url:
+            logger.info(f'fetched cached user: {user_id} profile url')
+            return cached_avatar_url
 
-            await cursor.execute(SELECT_STMT, {'username': username})
+        logger.info(f'fetched cached user: {user_id} cache miss')
 
-            result = await cursor.fetchone()
+        await cursor.execute(SELECT_STMT, {'userID': user_id})
 
-            if not result or not result.get('profile_img_url'):
-                return None
+        logger.info(f'Getting user {user_id} profile url from database')
+        result = await cursor.fetchone()
 
-            db_profile_url = result['profile_img_url']
-            return db_profile_url
+        if not result or not result.get('profile_img_url'):
+            return None
 
-        return cached_profile_url
+        db_avatar_url = result['profile_img_url']
+        
+        await redis_client.setex(redis_key, 3600 * 24, db_avatar_url)
+        logger.info(f'set cached user: {user_id} profile url')
+        
+        return db_avatar_url
 
 
 users = Users()

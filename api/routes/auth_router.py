@@ -1,8 +1,7 @@
-from email.mime.text import MIMEText
 import logging
 from datetime import datetime
 import random
-import smtplib
+import redis.asyncio as redis  # type: ignore
 
 from asyncmy.connection import Connection  # type: ignore
 from asyncmy.cursors import DictCursor  # type: ignore
@@ -17,17 +16,19 @@ from api.auth import (REFRESH_TOKEN_COOKIE_NAME, REFRESH_TOKEN_DOMAIN,
 from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType  # type: ignore
 from api.db.database import DB_NAME, get_session
 from api.config import settings
-from api.db.redis_backend import add_jti_block_list, delete_verification_code, get_verification_code, set_cache_user_id, set_user_token_v, set_verification_code
-from api.models.entities import RefreshTokenData, TokenData, User, UserCreate, UserTokenJTI, VerifyCodeRequest
+from api.db.redis_backend import get_redis
+from api.models.entities import RefreshTokenData, ResendCodeRequest, TokenData, User, UserCreate, UserTokenJTI, VerifyCodeRequest
 from api.users import users
-from api.utils import (generate_otp, get_current_user, get_current_user_jti,
+from api.utils import (get_current_user, get_current_user_jti,
                        get_refresh_token, validate_auth_creds,
                        validate_login_creds)
 
 # TODO: user routes
+
 logger = logging.getLogger('users_logger')
 auth_router = APIRouter(prefix='/auth', tags=['auth'])
 
+JTI_EXPIRY = 3600
 tz = timezone('Africa/Nairobi')
 BUILD = settings.BUILD
 MAIL_USERNAME = settings.MAIL_USERNAME
@@ -51,7 +52,7 @@ conf = ConnectionConfig(
 current_year = datetime.now().year
 
 
-async def send_otp(email: str, otp_code: str):
+async def send_verification_email(email: str, otp_code: str):
 
     html_content = f"""
     <!DOCTYPE html>
@@ -96,7 +97,7 @@ async def send_otp(email: str, otp_code: str):
 
                 <!-- Notice & Expiry -->
                 <p style="margin: 20px 0 0 0; font-size: 13px; line-height: 20px; color: #6b7280; text-align: center;">
-                    This code will expire in <strong>10 minutes</strong>. If you did not request this code, you can safely ignore this email.
+                    This code will expire in <strong>5 minutes</strong>. If you did not request this code, you can safely ignore this email.
                 </p>
                 </td>
             </tr>
@@ -147,25 +148,67 @@ async def send_otp(email: str, otp_code: str):
     return {"status": "success", "message": f"OTP sent to {email}"}
 
 
+async def generate_send_otp(email: str,
+                            redis_client: redis.Redis,
+                            background_tasks: BackgroundTasks) -> str:
+
+    code = f"{random.randint(100000, 999999)}"
+
+    # Store OTP code (5-min TTL) & set a 60-second cooldown lock
+    await redis_client.setex(f"user:{email}:verify", 300, code)
+    await redis_client.setex(f"resend_cooldown:{email}", 60, "locked")
+
+    # Queue background email job
+    background_tasks.add_task(send_verification_email, email, code)
+    return code
+
+
 @auth_router.post('/login', status_code=status.HTTP_200_OK)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm =
+async def login_for_access_token(background_tasks: BackgroundTasks,
+                                 form_data: OAuth2PasswordRequestForm =
                                  Depends(validate_login_creds),
+                                 redis_client: redis.Redis = Depends(
+                                     get_redis),
                                  conn: Connection = Depends(get_session)):
     logger.debug('[FUNC] login for access token')
+
     try:
         async with conn.cursor(cursor=DictCursor) as cursor:
-
             login_user = await users.authenticate_user(
                 cursor, form_data.username, form_data.password)
+
+            if not login_user.is_verified:
+                # Auto-trigger a fresh code on login attempt (respecting rate limits)
+                cooldown = await redis_client.get(f"resend_cooldown:{login_user.email}")
+                if not cooldown:
+                    await generate_send_otp(login_user.email, redis_client, background_tasks)
+
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "code": "ACCOUNT_UNVERIFIED",
+                        "message": "Account is not verified. A verification code has been sent.",
+                        "email": login_user.email
+                    })
 
             current_version = login_user.token_v
             logger.info(
                 f'User {login_user.username} current version {current_version}')
 
             if current_version:
-                await set_user_token_v(login_user.username, current_version)
+                redis_key = f"user:{login_user.username}:token_v"
+                await redis_client.setex(redis_key, 604800, current_version)
+
+                logger.info(f'{redis_key} successfully cached')
 
             token_data = {'sub': login_user.username, 'v': current_version}
+
+            # Generate & Send OTP for New Account
+
+            await generate_send_otp(email=login_user.email, redis_client=redis_client, background_tasks=background_tasks)
+
+            token_data = {'sub': login_user.username, 'v': current_version}
+
             response = auth_token_response(
                 token_data=token_data, msg="You've been logged in successfully")
 
@@ -188,9 +231,17 @@ async def read_users_me(current_user: TokenData = Depends(get_current_user)):
 @auth_router.post("/register", status_code=status.HTTP_201_CREATED)
 async def create_user(user: UserCreate, background_tasks: BackgroundTasks,
                       _: bool = Depends(validate_auth_creds),
-                      conn: Connection = Depends(get_session)):
-    redis_key = f"verify:{user.email}"
+                      conn: Connection = Depends(get_session),
+                      redis_client: redis.Redis = Depends(get_redis)):
     query = f"SELECT is_verified FROM {DB_NAME}.`user` WHERE email = %s LIMIT 1;"
+
+    query_update = f"""
+            UPDATE {DB_NAME}.`user` 
+            SET hashed_password=%s, username=%s 
+            WHERE email = %s;
+        """
+
+    redis_key = f"user:{user.username}:id"
 
     try:
         async with conn.cursor(cursor=DictCursor) as cursor:
@@ -208,16 +259,19 @@ async def create_user(user: UserCreate, background_tasks: BackgroundTasks,
                     )
 
                 # User exists but is NOT verified Allow
-                # TODO: Optionally update password/username here if needed before re-sending OTP
+                hash_password = users.get_password_hash(password=user.password)
+                await cursor.execute(query_update, (hash_password, user.username, user.email))
+
                 logger.info(
                     f"Unverified user {user.email} re-initiated registration.")
 
-                # Trigger fresh Redis OTP & return early to move user to verification step
-                code = generate_otp()
-                await set_verification_code(redis_key, code)
+                await conn.commit()
 
-                background_tasks.add_task(
-                    send_otp, user.email, code)
+                # Trigger fresh Redis OTP & return early to move user to verification step
+                await generate_send_otp(email=user.email, redis_client=redis_client, background_tasks=background_tasks)
+
+                logger.info(
+                    'Account pending verification. A new code has been sent.')
 
                 return {
                     "message": "Account pending verification. A new code has been sent.",
@@ -253,21 +307,23 @@ async def create_user(user: UserCreate, background_tasks: BackgroundTasks,
                 )
 
             user_id = user_record['userID']
-            await set_cache_user_id(username=user.username, user_id=user_id)
+
+            await redis_client.set(redis_key, user_id)
+            logger.info(f'cached user:{user.username} ID successful')
 
             # Generate & Send OTP for New Account
-            code = generate_otp()
-            await set_verification_code(redis_key, code)
-            background_tasks.add_task(
-                send_otp, user.email, code)
+            await generate_send_otp(email=user.email, redis_client=redis_client, background_tasks=background_tasks)
 
             logger.info(
                 f"User {user.username} created successfully (unverified)")
+
             return {
                 "message": "User registered successfully. Please verify your email.",
                 "userID": user_id,
+                "email": user.email,
                 "is_verified": False
             }
+
     except Error as e:
         await conn.rollback()
         logger.error(f"Database registration error: {e}")
@@ -285,10 +341,14 @@ async def create_user(user: UserCreate, background_tasks: BackgroundTasks,
 
 
 @auth_router.post('/verify-code')
-async def verify_code(payload: VerifyCodeRequest, conn=Depends(get_session)):
-    redis_key = f"verify:{payload.email}"
-    cached_code = await get_verification_code(redis_key)
+async def verify_code(payload: VerifyCodeRequest,
+                      conn=Depends(get_session),
+                      redis_client: redis.Redis = Depends(get_redis)):
+    redis_key = f"user:{payload.email}:verify"
+    cached_code = await redis_client.get(redis_key)
+
     logger.debug(f'payload {payload}')
+
     if not cached_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -335,7 +395,7 @@ async def verify_code(payload: VerifyCodeRequest, conn=Depends(get_session)):
             detail="Failed to update user verification status."
         )
 
-    await delete_verification_code(redis_key)
+    await redis_client.delete(redis_key)
     token_data = {'sub': user_record['username'], 'v': user_record['token_v']}
 
     response = auth_token_response(
@@ -345,9 +405,55 @@ async def verify_code(payload: VerifyCodeRequest, conn=Depends(get_session)):
     return response
 
 
+@auth_router.post('/resend-code')
+async def resend_verification_code(payload: ResendCodeRequest,
+                                   background_tasks: BackgroundTasks,
+                                   conn: Connection = Depends(get_session),
+                                   redis_client: redis.Redis = Depends(get_redis)):
+    query = f"SELECT is_verified FROM {DB_NAME}.`user` WHERE email = %s LIMIT 1;"
+
+    async with conn.cursor(cursor=DictCursor) as cursor:
+        await cursor.execute(query, (payload.email,))
+        user_record = await cursor.fetchone()
+
+    # Validate user existence
+    if not user_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found.")
+
+    # Check if already verified
+    if user_record.get("is_verified"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account is already verified. Please log in."
+        )
+
+    # Check for 60-second cooldown lock in Redis
+    cooldown_key = f"resend_cooldown:{payload.email}"
+    has_cooldown = await redis_client.get(cooldown_key)
+
+    if has_cooldown:
+        # time to live ttl
+        ttl = await redis_client.ttl(cooldown_key)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Please wait {ttl} seconds before requesting a new code."
+        )
+
+    # Generate & Send OTP for Account
+    await generate_send_otp(email=payload.email, redis_client=redis_client, background_tasks=background_tasks)
+
+    # Store new code in Redis (5-min expiration) & set 60s cooldown lock
+    logger.info(f"Resent verification code to {payload.email}")
+    return {"message": "A new verification code has been sent."}
+
+
 @auth_router.post('/logout', status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_token(current_user: TokenData = Depends(get_current_user),
-                       conn: Connection = Depends(get_session), users_jti: UserTokenJTI = Depends(get_current_user_jti)):
+                       conn: Connection = Depends(get_session),
+                       redis_client: redis.Redis = Depends(get_redis),
+                       users_jti: UserTokenJTI = Depends(get_current_user_jti)):
     try:
         async with conn.cursor(cursor=DictCursor) as cursor:
             params = (current_user.sub, '')
@@ -364,7 +470,12 @@ async def revoke_token(current_user: TokenData = Depends(get_current_user),
             logger.info(f'{type(users_jti)}')
 
             await conn.commit()
-            await add_jti_block_list(users_jti)
+
+            for key, value in users_jti:
+                KEY = f"{key}:{value}"
+                await redis_client.setex(KEY, JTI_EXPIRY, 'REVOKED')
+                logger.info(f'{KEY} successfully revoked')
+            # await add_jti_block_list(users_jti)
 
             response = JSONResponse(
                 content={"message": "You've been logged out successfully."},
@@ -388,7 +499,8 @@ async def revoke_token(current_user: TokenData = Depends(get_current_user),
 
 
 @auth_router.post('/refresh', status_code=status.HTTP_200_OK)
-async def get_new_access_token(token: RefreshTokenData = Depends(get_refresh_token)):
+async def get_new_access_token(token: RefreshTokenData = Depends(get_refresh_token),
+                               redis_client: redis.Redis = Depends(get_redis)):
     try:
         logger.debug(f'refresh token user token')
         token_data = {'sub': token.sub, 'v': token.version}
@@ -422,7 +534,10 @@ async def get_new_access_token(token: RefreshTokenData = Depends(get_refresh_tok
             logger.info(
                 f"Processing version {token_version} for user {token_sub}")
 
-            await set_user_token_v(username=token_sub, version=token_version)
+            KEY = f"user:{token_sub}:token_v"
+
+            await redis_client.setex(KEY, 604800, token_version)
+            logger.info(f'{KEY} successfully cached')
 
             response.set_cookie(
                 key=REFRESH_TOKEN_COOKIE_NAME,

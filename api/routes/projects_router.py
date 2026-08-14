@@ -33,7 +33,7 @@ async def add_project(
 
             params = (user_id, project.project_name, project.color)
             await cursor.callproc('add_project', params)
-            
+
             project_record = await cursor.fetchone()
 
             if not project_record:
@@ -42,9 +42,8 @@ async def add_project(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Failed to retrieve newly created project."
                 )
-                
-            await conn.commit()
 
+            await conn.commit()
 
             project_model = Project(**project_record)
 
@@ -72,7 +71,7 @@ async def duplicate_project(
 
             await cursor.callproc('duplicate_user_project',
                                   (user_id, project_id))
-            
+
             project_record = await cursor.fetchone()
 
             if not project_record:
@@ -81,12 +80,11 @@ async def duplicate_project(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Failed to retrieve newly created project."
                 )
-                
+
             await conn.commit()
 
-
             project_model = Project(**project_record)
-            
+
             return ProjectSuccessResponse(**{
                 'projectID': project_model.projectID,
                 'message': f'{project_model.project_name} duplicated successfully'})
@@ -203,6 +201,3 @@ async def delete_project(
         await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred while deleting projects.")
-
-
-
