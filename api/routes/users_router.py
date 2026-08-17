@@ -123,13 +123,13 @@ async def get_user_profile(conn: Connection = Depends(get_session),
 
             avatar_url = await users.get_avatar_url(cursor=cursor, user_id=user_id)
 
-            logger.debug(avatar_url)
 
             select_stmt = f"""SELECT email, avatar_version, phone_number, bio, role, department, avatar_color, DATE_FORMAT(create_date, '%%M %%Y') AS 'joined_in'  from {DB_NAME}.user WHERE userID = %(user_id)s"""
 
             await cursor.execute(select_stmt, {'user_id': user_id})
             user_record = await cursor.fetchone()
-            logger.info(user_record)
+            
+            
             user_map = {'userID': user_id,
                         'username': current_user.sub,
                         'email': user_record.get('email'),
